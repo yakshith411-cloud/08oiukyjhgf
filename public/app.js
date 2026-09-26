@@ -683,16 +683,30 @@ async function reanalyze(meeting) {
 function renderAllActions() {
   const list = $("#all-actions");
   const previousPositions = new Map([...list.children].map((row) => [row.dataset.taskId, row.getBoundingClientRect().top]));
-  const items = state.meetings.flatMap((meeting) => meeting.tasks.map((task) => ({ ...task, meetingId: meeting.id, meetingTitle: meeting.title }))).filter((task) => !task.completed);
-  $("#my-actions-count").textContent = items.length;
-  list.innerHTML = items.map((task) => `<div class="all-action-row" data-task-id="${escapeHtml(task.id)}"><button class="task-check" data-meeting-id="${escapeHtml(task.meetingId)}" data-task-id="${escapeHtml(task.id)}" aria-label="Complete action"></button><span class="task-title">${escapeHtml(task.title)}<span class="task-sub">${escapeHtml(task.owner)}</span></span><span class="all-action-meeting">${escapeHtml(task.meetingTitle)}</span><span class="task-due">${escapeHtml(taskDueLabel(task))}</span><span class="all-action-meeting">Open</span><button class="action-remove" data-meeting-id="${escapeHtml(task.meetingId)}" data-task-id="${escapeHtml(task.id)}" aria-label="Remove action" title="Remove action">⌫</button></div>`).join("");
+  const allTasks = state.meetings.flatMap((meeting) => meeting.tasks.map((task) => ({ ...task, meetingId: meeting.id, meetingTitle: meeting.title })));
+  const openItems = allTasks.filter((task) => !task.completed);
+  const completedItems = allTasks.filter((task) => task.completed);
+  const dueSoonItems = openItems.filter((task) => isDeadlineReminderDue(task));
+
+  $("#my-actions-count").textContent = openItems.length;
+  const dueSoonEl = $("#actions-due-soon-count");
+  if (dueSoonEl) dueSoonEl.textContent = dueSoonItems.length;
+  const completedEl = $("#actions-completed-count");
+  if (completedEl) completedEl.textContent = completedItems.length;
+  const rateEl = $("#actions-rate");
+  if (rateEl) {
+    const rate = allTasks.length ? Math.round((completedItems.length / allTasks.length) * 100) : 100;
+    rateEl.textContent = `${rate}%`;
+  }
+
+  list.innerHTML = openItems.map((task) => `<div class="all-action-row" data-task-id="${escapeHtml(task.id)}"><button class="task-check" data-meeting-id="${escapeHtml(task.meetingId)}" data-task-id="${escapeHtml(task.id)}" aria-label="Complete action"></button><span class="task-title">${escapeHtml(task.title)}<span class="task-sub">${escapeHtml(task.owner)}</span></span><span class="all-action-meeting">${escapeHtml(task.meetingTitle)}</span><span class="task-due">${escapeHtml(taskDueLabel(task))}</span><span class="all-action-meeting">Open</span><button class="action-remove" data-meeting-id="${escapeHtml(task.meetingId)}" data-task-id="${escapeHtml(task.id)}" aria-label="Remove action" title="Remove action">⌫</button></div>`).join("");
   $$("#all-actions .all-action-row").forEach((row) => {
     const previousTop = previousPositions.get(row.dataset.taskId);
     if (previousTop === undefined) return;
     const offset = previousTop - row.getBoundingClientRect().top;
     if (Math.abs(offset) > 1) row.animate([{ transform: `translateY(${offset}px)` }, { transform: "translateY(0)" }], { duration: 260, easing: "ease-out" });
   });
-  $("#actions-empty").hidden = items.length > 0;
+  $("#actions-empty").hidden = openItems.length > 0;
   $$("#all-actions .task-check").forEach((button) => button.addEventListener("click", async () => {
     const meeting = state.meetings.find((item) => item.id === button.dataset.meetingId);
     await toggleTask(meeting, button.dataset.taskId, button);
@@ -738,38 +752,26 @@ function switchView(view, updateUrl = true) {
   }
 
   if (isMeetings) {
-    $("#page-title").textContent = "Your meetings.";
-    $("#page-subtitle").textContent = "Recordings, notes, decisions, and actions in one place.";
+    if ($("#page-title")) $("#page-title").textContent = "Your meetings.";
+    if ($("#page-subtitle")) $("#page-subtitle").textContent = "Recordings, notes, decisions, and actions in one place.";
     $("#crumb-page").textContent = "Meetings";
     loadBossBanner();
   } else if (isBoss) {
-    $("#page-title").textContent = "Executive Portal & Meet Links.";
-    $("#page-subtitle").textContent = "Schedule company meetings, generate Google Meet links, and broadcast agendas to employees.";
     $("#crumb-page").textContent = "Boss Portal";
     loadBossMeetings();
   } else if (isActions) {
-    $("#page-title").textContent = "Your open actions.";
-    $("#page-subtitle").textContent = "Follow-ups and deadlines from your saved meetings.";
     $("#crumb-page").textContent = "My actions";
     renderAllActions();
   } else if (isAnalytics) {
-    $("#page-title").textContent = "Monthly Attendance.";
-    $("#page-subtitle").textContent = "Track your meeting participation, frequency, and time spent across months.";
     $("#crumb-page").textContent = "Monthly Analytics";
     loadMonthlyAnalytics(state.analyticsRange);
   } else if (isTeam) {
-    $("#page-title").textContent = "Team Directory.";
-    $("#page-subtitle").textContent = "Connect with colleagues, track attendance badges, and view roles.";
     $("#crumb-page").textContent = "Team Directory";
     loadTeamDirectory();
   } else if (isCalendar) {
-    $("#page-title").textContent = "Meeting Schedule & Calendar.";
-    $("#page-subtitle").textContent = "Monthly calendar view of your attended meetings and upcoming reviews.";
     $("#crumb-page").textContent = "Calendar";
     renderCalendar();
   } else if (isSettings) {
-    $("#page-title").textContent = "Settings & Database.";
-    $("#page-subtitle").textContent = "Configure Supabase PostgreSQL, view connection details, and manage profile.";
     $("#crumb-page").textContent = "Settings & DB";
     loadSupabaseSettings();
   }
@@ -941,17 +943,22 @@ async function loadTeamDirectory() {
   }
 }
 
+let selectedDept = "all";
+
 function renderTeamGrid() {
   const query = $("#team-search")?.value.trim().toLowerCase() || "";
-  const members = (state.teamMembers || []).filter((m) =>
-    `${m.name} ${m.email} ${m.role} ${m.department}`.toLowerCase().includes(query)
-  );
+  const members = (state.teamMembers || []).filter((m) => {
+    const matchesQuery = `${m.name} ${m.email} ${m.role} ${m.department}`.toLowerCase().includes(query);
+    const matchesDept = selectedDept === "all" || (m.department && m.department.toLowerCase().includes(selectedDept));
+    return matchesQuery && matchesDept;
+  });
+
   const countEl = $("#team-count");
   if (countEl) countEl.textContent = members.length;
   const grid = $("#team-grid");
   if (!grid) return;
   if (!members.length) {
-    grid.innerHTML = `<div class="empty-state-sm" style="grid-column: 1/-1;">No team members found matching "${escapeHtml(query)}".</div>`;
+    grid.innerHTML = `<div class="empty-state-sm" style="grid-column: 1/-1;">No team members found matching your search.</div>`;
     return;
   }
   grid.innerHTML = members.map((m) => {
@@ -990,6 +997,19 @@ function renderCalendar() {
   const monthName = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" }).format(current);
   monthTitle.textContent = `${monthName}`;
 
+  // Calculate calendar stats
+  const monthPrefix = `${year}-${String(month + 1).padStart(2, "0")}`;
+  const monthMeetings = state.meetings.filter((m) => m.createdAt && m.createdAt.startsWith(monthPrefix));
+  const monthBoss = (state.bossMeetings || []).filter((bm) => bm.scheduled_at && bm.scheduled_at.startsWith(monthPrefix));
+  const monthDeadlines = state.meetings.flatMap((m) => (m.tasks || [])).filter((t) => !t.completed && t.due_date && t.due_date.startsWith(monthPrefix));
+
+  const statMeet = $("#cal-stat-meetings");
+  if (statMeet) statMeet.textContent = monthMeetings.length;
+  const statBoss = $("#cal-stat-boss");
+  if (statBoss) statBoss.textContent = monthBoss.length;
+  const statDead = $("#cal-stat-deadlines");
+  if (statDead) statDead.textContent = monthDeadlines.length;
+
   const firstDay = new Date(year, month, 1).getDay();
   const startOffset = (firstDay + 6) % 7;
   const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -1013,7 +1033,7 @@ function renderCalendar() {
 
     let pillsHtml = "";
     dayBossMeetings.forEach((bm) => {
-      pillsHtml += `<div class="calendar-event-pill boss-event" data-meet-link="${escapeHtml(bm.meet_link)}" style="background:#eef6f1; border-color:#245e43; color:#184c34; font-weight:600;" title="Executive Meet: ${escapeHtml(bm.title)}">👑 ${escapeHtml(bm.title)}</div>`;
+      pillsHtml += `<div class="calendar-event-pill boss-event" data-meet-link="${escapeHtml(bm.meet_link)}" title="Executive Meet: ${escapeHtml(bm.title)}">👑 ${escapeHtml(bm.title)}</div>`;
     });
     dayMeetings.forEach((m) => {
       pillsHtml += `<div class="calendar-event-pill" data-meeting-id="${escapeHtml(m.id)}" title="${escapeHtml(m.title)}">${escapeHtml(m.title)}</div>`;
@@ -1027,7 +1047,7 @@ function renderCalendar() {
     }
 
     cellsHtml += `
-      <div class="calendar-day-cell ${isToday ? "cell-today" : ""}">
+      <div class="calendar-day-cell ${isToday ? "cell-today" : ""}" data-date="${dateStr}">
         <span class="calendar-day-num">${d}</span>
         ${pillsHtml}
       </div>
@@ -1042,17 +1062,95 @@ function renderCalendar() {
 
   grid.innerHTML = cellsHtml;
 
+  // Render agenda for today
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  renderCalendarAgenda(todayStr);
+
+  grid.querySelectorAll(".calendar-day-cell[data-date]").forEach((cell) => {
+    cell.addEventListener("click", () => {
+      renderCalendarAgenda(cell.dataset.date);
+    });
+  });
+
   grid.querySelectorAll(".calendar-event-pill[data-meeting-id]").forEach((pill) => {
-    pill.addEventListener("click", () => {
+    pill.addEventListener("click", (e) => {
+      e.stopPropagation();
       switchView("meetings");
       openMeeting(pill.dataset.meetingId);
     });
   });
   grid.querySelectorAll(".calendar-event-pill[data-meet-link]").forEach((pill) => {
-    pill.addEventListener("click", () => {
+    pill.addEventListener("click", (e) => {
+      e.stopPropagation();
       window.open(pill.dataset.meetLink, "_blank", "noopener,noreferrer");
     });
   });
+}
+
+function renderCalendarAgenda(dateStr) {
+  const agendaList = $("#calendar-agenda-list");
+  const titleEl = $("#agenda-date-title");
+  if (!agendaList) return;
+
+  const dt = new Date(`${dateStr}T12:00:00`);
+  const formatted = isNaN(dt.getTime()) ? dateStr : new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric" }).format(dt);
+  if (titleEl) titleEl.textContent = `Schedule for ${formatted}`;
+
+  const dayBoss = (state.bossMeetings || []).filter((bm) => bm.scheduled_at && bm.scheduled_at.startsWith(dateStr));
+  const dayMeetings = state.meetings.filter((m) => m.createdAt && m.createdAt.startsWith(dateStr));
+  const dayTasks = state.meetings.flatMap((m) => (m.tasks || []).map((t) => ({ ...t, meetingTitle: m.title }))).filter((t) => t.due_date === dateStr);
+
+  let items = [];
+
+  dayBoss.forEach((bm) => {
+    items.push(`
+      <div class="agenda-item" style="border-left:3px solid #145e4d; background:#f4f9f5;">
+        <div class="agenda-item-title">👑 ${escapeHtml(bm.title)}</div>
+        <div class="agenda-item-meta">
+          <span>⏱ ${bm.duration_minutes || 45} mins</span>
+          <span>·</span>
+          <span>🏛 ${escapeHtml(bm.department || "All Departments")}</span>
+        </div>
+        ${bm.agenda ? `<div style="font-size:10px; color:#5c6861; margin-top:2px;">${escapeHtml(bm.agenda)}</div>` : ""}
+        <a class="agenda-meet-btn" href="${escapeHtml(bm.meet_link)}" target="_blank" rel="noopener noreferrer">
+          <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#79d799;"></span>
+          <span>Join Google Meet ↗</span>
+        </a>
+      </div>
+    `);
+  });
+
+  dayMeetings.forEach((m) => {
+    items.push(`
+      <div class="agenda-item" style="border-left:3px solid #4a8c71;">
+        <div class="agenda-item-title">${escapeHtml(m.title)}</div>
+        <div class="agenda-item-meta">
+          <span>📅 Attended Sync</span>
+          <span>·</span>
+          <span>${m.tasks?.length || 0} action items</span>
+        </div>
+      </div>
+    `);
+  });
+
+  dayTasks.forEach((t) => {
+    items.push(`
+      <div class="agenda-item" style="border-left:3px solid #e77f6c;">
+        <div class="agenda-item-title">✓ Due: ${escapeHtml(t.title)}</div>
+        <div class="agenda-item-meta">
+          <span>Owner: <b>${escapeHtml(t.owner)}</b></span>
+          <span>·</span>
+          <span>${escapeHtml(t.meetingTitle)}</span>
+        </div>
+      </div>
+    `);
+  });
+
+  if (!items.length) {
+    agendaList.innerHTML = `<div class="empty-state-sm">No scheduled events or deadlines for ${formatted}.</div>`;
+  } else {
+    agendaList.innerHTML = items.join("");
+  }
 }
 
 /* =========================================================
@@ -1071,6 +1169,11 @@ async function loadBossMeetings() {
 function renderBossMeetings(meetings = []) {
   const countEl = $("#boss-meetings-count");
   if (countEl) countEl.textContent = meetings.length;
+  const totalKpi = $("#boss-kpi-total");
+  if (totalKpi) totalKpi.textContent = meetings.length;
+  const linksKpi = $("#boss-kpi-links");
+  if (linksKpi) linksKpi.textContent = meetings.filter(m => m.meet_link).length;
+
   const listEl = $("#boss-meetings-list");
   if (!listEl) return;
 
@@ -1659,8 +1762,16 @@ $$("#analytics-range-controls .filter-chip").forEach((btn) => {
   btn.addEventListener("click", () => loadMonthlyAnalytics(Number(btn.dataset.range)));
 });
 
-// Team directory search
+// Team directory search & department filters
 $("#team-search")?.addEventListener("input", renderTeamGrid);
+$$("#team-dept-filters .dept-chip").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    $$("#team-dept-filters .dept-chip").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    selectedDept = btn.dataset.dept || "all";
+    renderTeamGrid();
+  });
+});
 
 // Calendar controls
 $("#cal-prev-btn")?.addEventListener("click", () => {
