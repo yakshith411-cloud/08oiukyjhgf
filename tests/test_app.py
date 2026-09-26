@@ -483,12 +483,46 @@ class MeetingAnalysisTests(unittest.TestCase):
                 self.assertEqual(loaded["supabaseUrl"], "https://xyzproject.supabase.co")
                 self.assertEqual(loaded["supabaseKey"], "sample_anon_key")
                 self.assertIn("postgres:secretpassword@db.supabase.co", loaded["databaseUrl"])
-
     def test_page_routes_serve_index_html(self):
         routes = ["/", "/meetings", "/analytics", "/actions", "/team", "/calendar", "/settings", "/boss", "/app"]
         for route in routes:
             self.assertIn(route, meetflow_app.PAGE_ROUTES)
             self.assertIn(f"{route}/" if not route.endswith("/") else route, meetflow_app.PAGE_ROUTES)
+
+    def test_delete_account_and_attendance_record(self):
+        with TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            with patch("app.DATA_DIR", temp_path):
+                meetflow_app.init_db()
+
+                emp_id = "emp_test_del"
+                meetflow_app.db_execute(
+                    "INSERT INTO employees (id, name, email, password_hash, salt, role, department, avatar_color, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (emp_id, "Test User", "test_del@example.com", "hash", "salt", "Employee", "General", "#2e644b", meetflow_app.now())
+                )
+                token = meetflow_app.create_session(emp_id)
+
+                # Record attendance
+                meetflow_app.db_execute(
+                    "INSERT INTO attendance (id, employee_id, meeting_id, meeting_title, month_key, attended_at, duration_minutes) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    ("att_1", emp_id, "sched_1", "Sprint Sync", "2026-09", meetflow_app.now(), 45)
+                )
+
+                # Verify user can be looked up with session
+                user = meetflow_app.get_current_user_from_headers({"Authorization": f"Bearer {token}"})
+                self.assertIsNotNone(user)
+                self.assertEqual(user["id"], emp_id)
+
+                # Simulate delete account
+                meetflow_app.db_execute("DELETE FROM attendance WHERE employee_id = ?", (emp_id,))
+                meetflow_app.db_execute("DELETE FROM sessions WHERE employee_id = ?", (emp_id,))
+                meetflow_app.db_execute("DELETE FROM employees WHERE id = ?", (emp_id,))
+
+                # Verify user, sessions, attendance are cleaned up
+                user_after = meetflow_app.get_current_user_from_headers({"Authorization": f"Bearer {token}"})
+                self.assertIsNone(user_after)
+                att_after = meetflow_app.db_query("SELECT * FROM attendance WHERE employee_id = ?", (emp_id,))
+                self.assertEqual(len(att_after or []), 0)
 
 
 if __name__ == "__main__":

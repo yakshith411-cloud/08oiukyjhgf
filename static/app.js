@@ -1,6 +1,37 @@
 const SAMPLE_TITLE = "Product launch · weekly sync";
 const SAMPLE_TRANSCRIPT = `Maya: We have three weeks until launch, and the onboarding flow is the biggest risk.\nJordan: I will share the revised onboarding screens with the team by Friday.\nMaya: Great. We agreed to keep the first release focused on account setup and the welcome checklist.\nLeo: I can review the event tracking plan and send any gaps to Maya by next Tuesday.\nMaya: Let's also confirm the launch email with the support team before we lock the date.\nJordan: I will draft the launch email and share it with support on Thursday.\nMaya: Decision: we will move the launch readiness review to the 18th so support has time to prepare.\nLeo: I will schedule a thirty-minute readiness review with support and engineering by Monday.\nMaya: Sounds good. We need one final pass on mobile before the review.`;
 
+// Multi-Account Slot Support (e.g. ?u=1, ?u=2)
+const urlParams = new URLSearchParams(window.location.search);
+const userSlot = urlParams.get("u") || sessionStorage.getItem("meetflow_active_u") || "0";
+if (urlParams.get("u")) {
+  sessionStorage.setItem("meetflow_active_u", urlParams.get("u"));
+}
+const tokenStorageKey = `meetflow_auth_token_u${userSlot}`;
+
+function getStoredToken() {
+  return localStorage.getItem(tokenStorageKey) || (userSlot === "0" ? localStorage.getItem("meetflow_auth_token") : "") || "";
+}
+
+function saveStoredToken(tok) {
+  state.token = tok;
+  localStorage.setItem(tokenStorageKey, tok);
+  if (userSlot === "0") {
+    localStorage.setItem("meetflow_auth_token", tok);
+  }
+}
+
+function clearStoredToken() {
+  state.token = "";
+  localStorage.removeItem(tokenStorageKey);
+  if (userSlot === "0") {
+    localStorage.removeItem("meetflow_auth_token");
+  }
+}
+
+const DEFAULT_SB_URL = "https://fqizwbfhlcfqofvcovmv.supabase.co";
+const DEFAULT_SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZxaXp3YmZobGNmcW9mdmNvdm12Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA0NDM1NjUsImV4cCI6MjEwNjAxOTU2NX0.0YMZetTzhMzkFDKg5eDUD9nS2rIOEwe0kwYB_QIA9VY";
+
 const state = {
   meetings: [],
   activeId: null,
@@ -13,7 +44,7 @@ const state = {
   assistantMessages: [],
   assistantBusy: false,
   toastTimer: null,
-  token: localStorage.getItem("meetflow_auth_token") || "",
+  token: getStoredToken(),
   currentUser: null,
   analyticsRange: 12,
   analyticsData: null,
@@ -22,6 +53,8 @@ const state = {
   neonStatus: null,
   bossMeetings: [],
   upcomingBossMeeting: null,
+  supabaseUrl: DEFAULT_SB_URL,
+  supabaseKey: DEFAULT_SB_KEY,
 };
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -32,6 +65,7 @@ async function api(path, options = {}) {
   if (state.token) {
     headers["Authorization"] = `Bearer ${state.token}`;
   }
+  headers["X-User-Slot"] = userSlot;
   const response = await fetch(path, { ...options, headers });
   const contentType = response.headers.get("content-type") || "";
   if (!contentType.includes("application/json")) {
@@ -714,10 +748,151 @@ function renderAllActions() {
   $$("#all-actions .action-remove").forEach((button) => button.addEventListener("click", () => removeAction(button.dataset.meetingId, button.dataset.taskId)));
 }
 
+function openBossPinDialog(onSuccess) {
+  const dialog = $("#boss-pin-dialog");
+  const form = $("#boss-pin-form");
+  const input = $("#boss-pin-input");
+  const feedback = $("#boss-pin-feedback");
+  if (!dialog || !form) return;
+
+  if (feedback) feedback.textContent = "";
+  if (input) input.value = "";
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    const pin = input.value.trim();
+    if (pin === "7890") {
+      sessionStorage.setItem(`boss_pin_verified_u${userSlot}`, "7890");
+      dialog.close();
+      cleanup();
+      showToast("Boss Access Granted 👑");
+      if (typeof onSuccess === "function") onSuccess();
+    } else {
+      if (feedback) {
+        feedback.textContent = "Incorrect PIN. Access Denied.";
+        feedback.style.color = "#a12b2b";
+      }
+      input.value = "";
+      input.focus();
+    }
+  };
+
+  const handleCancel = () => {
+    dialog.close();
+    cleanup();
+    switchView("meetings");
+  };
+
+  const cleanup = () => {
+    form.removeEventListener("submit", handleSubmit);
+    $("#boss-pin-cancel")?.removeEventListener("click", handleCancel);
+    $("#boss-pin-close")?.removeEventListener("click", handleCancel);
+  };
+
+  form.addEventListener("submit", handleSubmit);
+  $("#boss-pin-cancel")?.addEventListener("click", handleCancel);
+  $("#boss-pin-close")?.addEventListener("click", handleCancel);
+
+  dialog.showModal();
+}
+
+async function loadEmployeeMeetings() {
+  const section = $("#employee-meetings-section");
+  const list = $("#employee-meetings-list");
+  if (!section || !list) return;
+
+  try {
+    const res = await api("/api/boss/meetings");
+    const meetings = Array.isArray(res) ? res : [];
+
+    const activeMeetings = meetings.filter((m) => {
+      const isDismissed = localStorage.getItem(`meetflow_dismissed_meet_u${userSlot}_${m.id}`) === "true";
+      const isCompleted = m.status === "completed";
+      return !isDismissed && !isCompleted;
+    });
+
+    if (activeMeetings.length === 0) {
+      section.hidden = true;
+      return;
+    }
+
+    section.hidden = false;
+    list.innerHTML = activeMeetings.map((m) => {
+      const dateFormatted = formatScheduledDate(m.scheduled_at);
+      return `
+        <article class="employee-meeting-card" id="emp-meet-${m.id}">
+          <div class="employee-meeting-card-info">
+            <h4>${escapeHtml(m.title)}</h4>
+            <div class="employee-meeting-card-meta">
+              <span>📅 ${dateFormatted}</span>
+              <span>⏱ ${m.duration_minutes || 45} mins</span>
+              <span class="badge" style="background:#eaf4ed; color:#1d5b35; font-size:10px; padding:2px 8px; border-radius:4px;">${escapeHtml(m.department || "All Departments")}</span>
+            </div>
+            ${m.agenda ? `<div class="employee-meeting-card-agenda">${escapeHtml(m.agenda)}</div>` : ""}
+          </div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <a class="button button-meet join-employee-meet-btn" 
+               href="${m.meet_link}" 
+               target="_blank" 
+               rel="noopener noreferrer"
+               data-id="${m.id}" 
+               data-title="${escapeHtml(m.title)}">
+              <span>Join Google Meet</span> ↗
+            </a>
+          </div>
+        </article>
+      `;
+    }).join("");
+
+    list.querySelectorAll(".join-employee-meet-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const mid = btn.dataset.id;
+        const mtitle = btn.dataset.title;
+
+        // Mark permanently dismissed for this employee
+        localStorage.setItem(`meetflow_dismissed_meet_u${userSlot}_${mid}`, "true");
+
+        try {
+          await api("/api/attendance/record", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ meetingId: mid, title: mtitle }),
+          });
+        } catch (_) {}
+
+        const card = $(`#emp-meet-${mid}`);
+        if (card) {
+          card.classList.add("dismissed");
+          setTimeout(() => {
+            card.remove();
+            if (list.children.length === 0) {
+              section.hidden = true;
+            }
+          }, 250);
+        }
+
+        showToast(`Joined ${mtitle}! Meeting dismissed from queue.`);
+      });
+    });
+  } catch (err) {
+    console.warn("Could not load employee meetings:", err);
+  }
+}
+
 function switchView(view, updateUrl = true) {
+  const isBoss = view === "boss";
+  if (isBoss) {
+    const verified = sessionStorage.getItem(`boss_pin_verified_u${userSlot}`) === "7890";
+    if (!verified) {
+      openBossPinDialog(() => {
+        switchView("boss", updateUrl);
+      });
+      return;
+    }
+  }
+
   state.view = view;
   const isMeetings = view === "meetings";
-  const isBoss = view === "boss";
   const isActions = view === "actions";
   const isAnalytics = view === "analytics";
   const isTeam = view === "team";
@@ -741,12 +916,13 @@ function switchView(view, updateUrl = true) {
   $("#detail-panel").hidden = !isMeetings || !state.activeId;
 
   if (updateUrl) {
-    const targetPath = "/" + view;
-    if (window.location.pathname !== targetPath) {
+    const querySuffix = userSlot !== "0" ? `?u=${userSlot}` : "";
+    const targetPath = "/" + view + querySuffix;
+    if (window.location.pathname + window.location.search !== targetPath) {
       try {
         history.pushState({ view }, "", targetPath);
       } catch {
-        window.location.hash = "#" + view;
+        window.location.hash = "#" + view + querySuffix;
       }
     }
   }
@@ -755,7 +931,7 @@ function switchView(view, updateUrl = true) {
     if ($("#page-title")) $("#page-title").textContent = "Your meetings.";
     if ($("#page-subtitle")) $("#page-subtitle").textContent = "Recordings, notes, decisions, and actions in one place.";
     $("#crumb-page").textContent = "Meetings";
-    loadBossBanner();
+    loadEmployeeMeetings();
   } else if (isBoss) {
     $("#crumb-page").textContent = "Boss Portal";
     loadBossMeetings();
@@ -1526,11 +1702,24 @@ async function initAuth() {
             avatar_url: gUser.user_metadata?.avatar_url || "",
           }),
         });
-        state.token = res.token;
+        saveStoredToken(res.token);
         state.currentUser = res.employee || res.user;
-        localStorage.setItem("meetflow_auth_token", res.token);
+
+        // Ensure user is stored in Supabase employees table
+        try {
+          await sbClient.from("employees").upsert({
+            id: state.currentUser.id,
+            name: state.currentUser.name,
+            email: state.currentUser.email,
+            role: state.currentUser.role || "Employee",
+            department: state.currentUser.department || "General",
+            avatar_color: state.currentUser.avatar_color || "#2e644b",
+          }, { onConflict: "email" });
+        } catch (_) {}
+
         if (window.location.hash && window.location.hash.includes("access_token")) {
-          window.history.replaceState(null, "", window.location.pathname);
+          const cleanUrl = window.location.pathname + (userSlot !== "0" ? `?u=${userSlot}` : "");
+          window.history.replaceState(null, "", cleanUrl);
         }
         updateUserUI();
         showToast(`Signed in with Google as ${state.currentUser.name}`);
@@ -1549,9 +1738,8 @@ async function initAuth() {
       return;
     } catch (err) {
       console.warn("Auth check:", err);
-      state.token = "";
+      clearStoredToken();
       state.currentUser = null;
-      localStorage.removeItem("meetflow_auth_token");
     }
   } else {
     state.currentUser = null;
@@ -1657,10 +1845,11 @@ async function handleGoogleSignIn() {
   }
 
   try {
+    const redirectUrl = window.location.origin + "/meetings" + (userSlot !== "0" ? `?u=${encodeURIComponent(userSlot)}` : "");
     const { error } = await sbClient.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: window.location.origin + "/meetings",
+        redirectTo: redirectUrl,
       },
     });
     if (error) throw error;
@@ -1672,6 +1861,7 @@ async function handleGoogleSignIn() {
     showToast(err.message || "Google sign-in failed.");
   }
 }
+window.handleGoogleSignIn = handleGoogleSignIn;
 
 async function handleSignIn(e) {
   e.preventDefault();
@@ -1686,9 +1876,8 @@ async function handleSignIn(e) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password }),
     });
-    state.token = res.token;
+    saveStoredToken(res.token);
     state.currentUser = res.employee;
-    localStorage.setItem("meetflow_auth_token", res.token);
     updateUserUI();
     $("#auth-dialog").close();
     showToast(`Welcome back, ${res.employee.name}!`);
@@ -1716,9 +1905,8 @@ async function handleRegister(e) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, email, department, role, password }),
     });
-    state.token = res.token;
+    saveStoredToken(res.token);
     state.currentUser = res.employee;
-    localStorage.setItem("meetflow_auth_token", res.token);
     updateUserUI();
     $("#auth-dialog").close();
     showToast(`Account registered for ${res.employee.name}!`);
@@ -1742,13 +1930,37 @@ async function handleLogout() {
       await sbClient.auth.signOut();
     } catch {}
   }
-  state.token = "";
+  clearStoredToken();
   state.currentUser = null;
-  localStorage.removeItem("meetflow_auth_token");
   showToast("Signed out.");
   updateUserUI();
   if (state.view === "analytics") loadMonthlyAnalytics(state.analyticsRange);
   if (state.view === "team") loadTeamDirectory();
+}
+
+async function handleDeleteAccount() {
+  if (!state.currentUser) {
+    showToast("You are not signed in.");
+    return;
+  }
+  const confirmed = window.confirm(`Are you sure you want to permanently delete your account (${state.currentUser.email})? All your meeting history, attendance, and sessions will be permanently erased.`);
+  if (!confirmed) return;
+
+  try {
+    await api("/api/auth/delete-account", { method: "POST" });
+    const sbClient = getSupabaseClient();
+    if (sbClient) {
+      try { await sbClient.auth.signOut(); } catch {}
+    }
+    clearStoredToken();
+    state.currentUser = null;
+    updateUserUI();
+    showToast("Your account has been deleted.");
+    switchView("meetings");
+    if (state.view === "team") loadTeamDirectory();
+  } catch (err) {
+    showToast(err.message || "Failed to delete account.");
+  }
 }
 
 state.selectedAudioFile = null;
@@ -1983,6 +2195,7 @@ $("#google-signin-btn")?.addEventListener("click", handleGoogleSignIn);
 $("#signin-form")?.addEventListener("submit", handleSignIn);
 $("#register-form")?.addEventListener("submit", handleRegister);
 $("#logout-btn")?.addEventListener("click", handleLogout);
+$("#delete-account-btn")?.addEventListener("click", handleDeleteAccount);
 $("#switch-account-btn")?.addEventListener("click", () => openAuthDialog("signin"));
 
 // Boss Portal controls
@@ -2009,6 +2222,13 @@ function checkInitialRoute() {
     document.body.classList.remove("landing-mode");
     switchView(targetView, false);
   }
+}
+
+// Request push notification permission automatically once web page is launched
+if ("Notification" in window && Notification.permission === "default") {
+  setTimeout(() => {
+    Notification.requestPermission().catch(() => {});
+  }, 1200);
 }
 
 // App Initialization

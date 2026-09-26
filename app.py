@@ -85,17 +85,19 @@ def now() -> str:
 
 
 DB_CONFIG_FILE = DATA_DIR / "db_config.json"
+DEFAULT_SUPABASE_URL = "https://fqizwbfhlcfqofvcovmv.supabase.co"
+DEFAULT_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZxaXp3YmZobGNmcW9mdmNvdm12Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA0NDM1NjUsImV4cCI6MjEwNjAxOTU2NX0.0YMZetTzhMzkFDKg5eDUD9nS2rIOEwe0kwYB_QIA9VY"
 DATABASE_URL = os.environ.get("SUPABASE_DATABASE_URL", os.environ.get("DATABASE_URL", "")).strip()
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "").strip()
-SUPABASE_KEY = os.environ.get("SUPABASE_ANON_KEY", os.environ.get("SUPABASE_KEY", "")).strip()
+SUPABASE_URL = os.environ.get("SUPABASE_URL", DEFAULT_SUPABASE_URL).strip() or DEFAULT_SUPABASE_URL
+SUPABASE_KEY = os.environ.get("SUPABASE_ANON_KEY", os.environ.get("SUPABASE_KEY", DEFAULT_SUPABASE_KEY)).strip() or DEFAULT_SUPABASE_KEY
 
 
 def load_db_config() -> dict:
     global DATABASE_URL, SUPABASE_URL, SUPABASE_KEY
     cfg = {
         "databaseUrl": DATABASE_URL,
-        "supabaseUrl": SUPABASE_URL,
-        "supabaseKey": SUPABASE_KEY,
+        "supabaseUrl": SUPABASE_URL or DEFAULT_SUPABASE_URL,
+        "supabaseKey": SUPABASE_KEY or DEFAULT_SUPABASE_KEY,
     }
     if DB_CONFIG_FILE.exists():
         try:
@@ -109,8 +111,8 @@ def load_db_config() -> dict:
         except Exception:
             pass
     DATABASE_URL = cfg["databaseUrl"]
-    SUPABASE_URL = cfg["supabaseUrl"]
-    SUPABASE_KEY = cfg["supabaseKey"]
+    SUPABASE_URL = cfg["supabaseUrl"] or DEFAULT_SUPABASE_URL
+    SUPABASE_KEY = cfg["supabaseKey"] or DEFAULT_SUPABASE_KEY
     return cfg
 
 
@@ -1734,6 +1736,15 @@ class Handler(BaseHTTPRequestHandler):
                 if token:
                     db_execute("DELETE FROM sessions WHERE token = ?", (token,))
                 return self.send_json({"loggedOut": True})
+            if path in ("/api/auth/delete-account", "/api/auth/account"):
+                user = get_current_user_from_headers(self.headers)
+                if not user:
+                    return self.send_json({"error": "Unauthorized. Please sign in to delete your account."}, 401)
+                emp_id = user["id"]
+                db_execute("DELETE FROM attendance WHERE employee_id = ?", (emp_id,))
+                db_execute("DELETE FROM sessions WHERE employee_id = ?", (emp_id,))
+                db_execute("DELETE FROM employees WHERE id = ?", (emp_id,))
+                return self.send_json({"deleted": True, "message": "Account successfully deleted."})
             if path == "/api/settings/neon":
                 payload = self.read_json()
                 url = str(payload.get("databaseUrl", "")).strip()
@@ -1946,6 +1957,15 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_DELETE(self) -> None:
         path = unquote(urlparse(self.path).path)
+        if path in ("/api/auth/delete-account", "/api/auth/account"):
+            user = get_current_user_from_headers(self.headers)
+            if not user:
+                return self.send_json({"error": "Unauthorized. Please sign in to delete your account."}, 401)
+            emp_id = user["id"]
+            db_execute("DELETE FROM attendance WHERE employee_id = ?", (emp_id,))
+            db_execute("DELETE FROM sessions WHERE employee_id = ?", (emp_id,))
+            db_execute("DELETE FROM employees WHERE id = ?", (emp_id,))
+            return self.send_json({"deleted": True, "message": "Account successfully deleted."})
         if path.startswith("/api/boss/meetings/"):
             meeting_id = path.removeprefix("/api/boss/meetings/")
             delete_scheduled_meeting(meeting_id)
