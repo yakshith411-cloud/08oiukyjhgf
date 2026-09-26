@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f5f1">
+  <title>Meetflow — Meeting intelligence, in motion</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/local.css?v=ui-20260926-2">
+  <link rel="stylesheet" href="/landing.css">
+  <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js"}}</script>
+</head>
+<body>
+  <div id="landing-page">
+    <header class="landing-header">
+      <a class="landing-brand" href="/" aria-label="Meetflow home"><span class="landing-brand-mark">MF</span><span>meetflow</span></a>
+      <span class="landing-nav-note">Meeting intelligence · 01</span>
+      <a class="landing-cta" href="#app">Get started <span aria-hidden="true">↗</span></a>
+    </header>
+    <main class="landing-hero">
+      <canvas class="liquid-scene" id="liquid-scene" aria-hidden="true"></canvas>
+      <div class="landing-content">
+        <div class="landing-index"><span></span>Conversation, in motion</div>
+        <h1 class="landing-title">Meetflow<span><em>.</em></span></h1>
+        <p class="landing-copy">Meetings end. Momentum doesn’t. Keep the important things moving after the room goes quiet.</p>
+        <div class="landing-actions">
+          <a class="landing-cta" href="#app">Get started <span aria-hidden="true">↗</span></a>
+          <span class="landing-microcopy">A clearer next step starts here.</span>
+        </div>
+      </div>
+      <div class="landing-bottomline"><span>Clarity for what comes next</span><span>Built for the work after the meeting</span></div>
+    </main>
+    <section class="landing-afterword" aria-label="Meetflow">
+      <span class="landing-footer-label">The conversation is only the beginning</span>
+      <p>Better conversations. Clearer next steps.</p>
+      <span class="landing-footer-label">Meetflow · 2026</span>
+    </section>
+  </div>
+  <div class="app-shell" hidden>
+    <aside class="sidebar">
+      <a class="brand" href="/" aria-label="Meetflow home">
+        <span class="brand-mark"><span></span><span></span><span></span></span>
+        <span>meetflow<span class="brand-period">.</span></span>
+      </a>
+      <nav class="primary-nav" aria-label="Primary navigation">
+        <button class="nav-item active" data-view="meetings"><span class="nav-icon">▤</span>Meetings<span class="nav-count" id="meeting-count">0</span></button>
+        <button class="nav-item" data-view="analytics"><span class="nav-icon">📈</span>Monthly Analytics</button>
+        <button class="nav-item" data-view="actions"><span class="nav-icon">✓</span>My actions<span class="nav-count" id="action-count">0</span></button>
+        <button class="nav-item" data-view="team"><span class="nav-icon">👥</span>Team Directory</button>
+        <button class="nav-item" data-view="calendar"><span class="nav-icon">📅</span>Calendar</button>
+        <button class="nav-item" data-view="settings"><span class="nav-icon">⚙</span>Settings & DB</button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="sidebar-user-block" id="sidebar-user-block" tabindex="0" role="button" title="View profile or switch account">
+          <div class="user-avatar" id="sidebar-user-avatar">AM</div>
+          <div class="user-info">
+            <b id="sidebar-user-name">Alex Morgan</b>
+            <small id="sidebar-user-role">Product Marketing Lead</small>
+          </div>
+          <button class="icon-button user-auth-btn" id="sidebar-auth-trigger" type="button" title="Sign out or switch account" aria-label="Account options">⋮</button>
+        </div>
+        <div class="local-status db-status-block" id="sidebar-db-status" title="Database status">
+          <span class="status-dot"></span>
+          <div><b id="sidebar-db-title">Database</b><small id="sidebar-db-sub">Loading…</small></div>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="topbar">
+        <div class="breadcrumbs"><b id="crumb-page">Meetings</b></div>
+        <div class="topbar-actions">
+          <button class="privacy-pill db-pill" id="topbar-db-pill" type="button" title="Database Connection Status"><span class="status-dot"></span><span id="topbar-db-label">Database</span></button>
+          <button class="privacy-pill provider-status" id="provider-status" type="button" title="AssemblyAI configured on the server"><span class="status-dot"></span><span id="provider-label">AssemblyAI ready</span></button>
+          <button class="button button-light assistant-open" id="assistant-open" type="button">Ask Meetflow</button>
+          <button class="button button-light auth-header-btn" id="auth-header-btn" type="button">Sign in</button>
+          <button class="icon-button reminder-enable" id="reminder-permission" type="button" title="Enable deadline notifications" aria-label="Enable deadline notifications">◷</button>
+          <button class="icon-button" id="search-button" title="Search meetings" aria-label="Search meetings">⌕</button>
+        </div>
+      </header>
+      <div class="page-wrap">
+        <section class="page-heading">
+          <div><div class="eyebrow"><span class="eyebrow-line"></span>MEETINGS</div><h1 id="page-title">Your meetings.</h1><p class="heading-copy" id="page-subtitle">Recordings, notes, decisions, and actions in one place.</p></div>
+          <button class="button button-light button-danger clear-all-button" id="clear-all" type="button" title="Clear all saved meetings and actions" aria-label="Clear all meetings, transcripts, and actions"><span aria-hidden="true">⌫</span><span>Clear all</span></button>
+        </section>
+
+        <section class="deadline-panel" id="deadline-panel" aria-live="polite" hidden></section>
+
+        <section class="overview-grid" aria-label="Workspace overview">
+          <article class="stat-block"><span class="stat-label">MEETINGS PROCESSED</span><div class="stat-value" id="stat-meetings">00</div><span class="stat-foot"><span class="stat-symbol symbol-teal">↗</span>In this workspace</span></article>
+          <article class="stat-block"><span class="stat-label">OPEN ACTIONS</span><div class="stat-value" id="stat-actions">00</div><span class="stat-foot"><span class="stat-symbol symbol-coral">●</span>Across all meetings</span></article>
+          <article class="stat-block stat-highlight"><span class="stat-label">YOUR FOCUS</span><div class="focus-value" id="stat-focus">A clearer next step.</div><span class="stat-foot">Good work starts with clarity.</span><span class="highlight-spark">✳</span></article>
+        </section>
+
+        <section class="workspace-grid">
+          <div class="main-column">
+            <section class="upload-panel" id="upload-panel" aria-labelledby="upload-title">
+              <div class="upload-copy"><div class="upload-icon" aria-hidden="true"><span>↥</span></div><div><div class="eyebrow muted-eyebrow">ADD A MEETING</div><h2 id="upload-title">Upload a recording or paste notes.</h2><p>Meetflow creates a transcript, summary, decisions, and follow-up actions.</p></div></div>
+              <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Choose a meeting audio recording">
+                <div class="wave-icon" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+                <div class="drop-copy"><b>Drop a recording here</b><span>MP3, WAV, M4A, MP4 · up to 250 MB</span></div>
+                <button class="button button-outline" id="browse-button" type="button">Choose file</button>
+                <input id="audio-input" type="file" accept="audio/*,video/mp4,video/webm" hidden>
+              </div>
+              <div class="selected-file-panel" id="selected-file-panel" hidden style="margin-top:10px; padding:12px 14px; background:#fff; border:1px solid #c9d8cc; border-radius:6px; display:none; align-items:center; justify-content:space-between; gap:12px;">
+                <div style="display:flex; align-items:center; gap:10px; min-width:0;">
+                  <span style="font-size:18px;">🎵</span>
+                  <div style="display:grid; gap:2px; min-width:0;">
+                    <b id="selected-file-name" style="font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></b>
+                    <small id="selected-file-size" style="font-size:9px; color:#859089;"></small>
+                  </div>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px; flex:none;">
+                  <button class="text-button" id="clear-selected-file" type="button" style="color:#a84040;">Change file</button>
+                  <button class="button button-dark" id="generate-button" type="button" style="height:32px; padding:0 14px;"><span>Generate</span> <span style="font-size:12px;">⚡</span></button>
+                </div>
+              </div>
+              <div class="upload-footer"><span><span class="lock-icon">◈</span> Audio is sent securely to AssemblyAI</span><span class="upload-footer-actions"><button class="text-button" id="notes-entry-button">Paste transcript</button><button class="text-button" id="sample-button">Try a sample meeting <span>↗</span></button></span></div>
+              <div class="upload-progress" id="upload-progress" hidden><div class="progress-head"><span id="progress-title">Preparing transcription</span><span class="progress-spinner"></span></div><p id="progress-message">Preparing transcription…</p></div>
+            </section>
+
+            <section class="meetings-section" id="meetings-view">
+              <div class="section-heading"><div><div class="eyebrow muted-eyebrow">YOUR WORKSPACE</div><h2>Recent meetings <span class="heading-count" id="recent-count">0</span></h2></div><div class="section-controls"><label class="search-field"><span>⌕</span><input id="meeting-search" type="search" placeholder="Find a meeting" aria-label="Find a meeting"></label><button class="sort-button" id="sort-button">Newest <span>⌄</span></button></div></div>
+              <div class="meeting-list" id="meeting-list"></div>
+              <div class="empty-state" id="empty-state"><div class="empty-art"><span class="empty-sheet">≋</span><span class="empty-spark">✳</span></div><b>No meetings yet.</b><span>Upload a recording or paste notes to add your first meeting.</span><button class="text-button" id="empty-sample">Try a sample meeting <span>↗</span></button></div>
+            </section>
+
+            <section class="actions-page" id="actions-view" hidden>
+              <div class="section-heading"><div><div class="eyebrow muted-eyebrow">FOLLOW-THROUGH</div><h2>My actions <span class="heading-count" id="my-actions-count">0</span></h2></div></div>
+              <div id="all-actions" class="all-actions"></div>
+              <div class="empty-state" id="actions-empty"><div class="empty-art"><span class="empty-sheet">✓</span><span class="empty-spark">✳</span></div><b>No actions yet.</b><span>Tasks from your meetings will show up here.</span></div>
+            </section>
+
+            <!-- Monthly Analytics View -->
+            <section class="analytics-page" id="analytics-view" hidden>
+              <div class="section-heading">
+                <div>
+                  <div class="eyebrow muted-eyebrow">ATTENDANCE INTELLIGENCE</div>
+                  <h2>Monthly attendance graph</h2>
+                </div>
+                <div class="analytics-range-controls" id="analytics-range-controls">
+                  <button class="filter-chip active" data-range="12">12 Months</button>
+                  <button class="filter-chip" data-range="6">6 Months</button>
+                  <button class="filter-chip" data-range="3">3 Months</button>
+                </div>
+              </div>
+
+              <div class="analytics-metrics-grid">
+                <article class="metric-card">
+                  <span class="metric-label">TOTAL MEETINGS</span>
+                  <div class="metric-value" id="analytics-total-meetings">0</div>
+                  <span class="metric-caption">Attended in period</span>
+                </article>
+                <article class="metric-card">
+                  <span class="metric-label">MONTHLY AVERAGE</span>
+                  <div class="metric-value" id="analytics-avg-monthly">0.0</div>
+                  <span class="metric-caption">Meetings per month</span>
+                </article>
+                <article class="metric-card">
+                  <span class="metric-label">HOURS INVESTED</span>
+                  <div class="metric-value" id="analytics-total-hours">0h</div>
+                  <span class="metric-caption">Total meeting duration</span>
+                </article>
+                <article class="metric-card">
+                  <span class="metric-label">FOLLOW-THROUGH</span>
+                  <div class="metric-value" id="analytics-total-tasks">0</div>
+                  <span class="metric-caption">Action items generated</span>
+                </article>
+              </div>
+
+              <article class="chart-card">
+                <div class="chart-header">
+                  <div>
+                    <h3>Meeting Attendance by Month</h3>
+                    <p class="chart-subtitle">Monthly volume of meetings attended with average benchmark</p>
+                  </div>
+                  <div class="chart-legend">
+                    <span class="legend-item"><span class="legend-swatch bar-swatch"></span> Meetings</span>
+                    <span class="legend-item"><span class="legend-swatch avg-swatch"></span> Average</span>
+                  </div>
+                </div>
+                <div class="chart-canvas-wrap" id="chart-canvas-wrap">
+                  <div class="chart-loading">Loading attendance data…</div>
+                </div>
+              </article>
+
+              <div class="attendance-history-card">
+                <div class="card-head">
+                  <div>
+                    <div class="eyebrow muted-eyebrow">ATTENDANCE LOGS</div>
+                    <h3>Recent meetings attended</h3>
+                  </div>
+                </div>
+                <div class="recent-attendance-list" id="analytics-recent-list">
+                  <div class="empty-state-sm">No recent attendance records.</div>
+                </div>
+              </div>
+            </section>
+
+            <!-- Team Directory View -->
+            <section class="team-page" id="team-view" hidden>
+              <div class="section-heading">
+                <div>
+                  <div class="eyebrow muted-eyebrow">ORGANIZATION</div>
+                  <h2>Team Directory <span class="heading-count" id="team-count">0</span></h2>
+                </div>
+                <div class="section-controls">
+                  <label class="search-field">
+                    <span>⌕</span>
+                    <input id="team-search" type="search" placeholder="Search team members…" aria-label="Search team">
+                  </label>
+                </div>
+              </div>
+              <div class="team-grid" id="team-grid"></div>
+            </section>
+
+            <!-- Calendar View -->
+            <section class="calendar-page" id="calendar-view" hidden>
+              <div class="section-heading">
+                <div>
+                  <div class="eyebrow muted-eyebrow">SCHEDULE & RECAP</div>
+                  <h2 id="calendar-month-title">Meeting Calendar</h2>
+                </div>
+                <div class="calendar-nav-controls">
+                  <button class="button button-outline" id="cal-prev-btn" type="button">‹ Prev</button>
+                  <button class="button button-outline" id="cal-today-btn" type="button">Today</button>
+                  <button class="button button-outline" id="cal-next-btn" type="button">Next ›</button>
+                </div>
+              </div>
+              <div class="calendar-card">
+                <div class="calendar-weekdays">
+                  <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
+                </div>
+                <div class="calendar-grid" id="calendar-grid"></div>
+              </div>
+            </section>
+
+            <!-- Settings & Database View -->
+            <section class="settings-page" id="settings-view" hidden>
+              <div class="section-heading">
+                <div>
+                  <div class="eyebrow muted-eyebrow">INFRASTRUCTURE & CONFIGURATION</div>
+                  <h2>Settings & Neon Database</h2>
+                </div>
+              </div>
+
+              <div class="settings-grid">
+                <article class="settings-card neon-card">
+                  <div class="settings-card-head">
+                    <div class="neon-badge-pill" id="settings-neon-status-badge">
+                      <span class="status-dot"></span>
+                      <span id="settings-neon-status-text">Checking Database…</span>
+                    </div>
+                    <h3>Neon Serverless PostgreSQL</h3>
+                  </div>
+                  <p class="settings-copy">
+                    Meetflow uses serverless PostgreSQL on <strong>Neon DB</strong> to securely store employee profiles, authentication sessions, and monthly attendance tracking. When unconfigured, it uses a local SQLite fallback database.
+                  </p>
+                  <form id="neon-config-form" class="settings-form">
+                    <label class="field-label" for="neon-url-input">NEON DATABASE URL (POSTGRESQL CONNECTION STRING)</label>
+                    <div class="neon-input-wrap">
+                      <input class="dialog-input" id="neon-url-input" type="password" placeholder="postgresql://user:password@ep-xyz.us-east-2.aws.neon.tech/neondb?sslmode=require" autocomplete="off">
+                      <button class="button button-outline" id="toggle-neon-visibility" type="button" title="Show/Hide">👁</button>
+                    </div>
+                    <div class="settings-actions">
+                      <button class="button button-dark" id="save-neon-btn" type="submit">Save & Connect to Neon</button>
+                      <button class="button button-outline" id="test-neon-btn" type="button">Test Connection</button>
+                    </div>
+                    <div class="db-test-result" id="neon-test-result" role="status"></div>
+                  </form>
+                  <div class="neon-guide">
+                    <b>How to get a free Neon DB URL:</b>
+                    <ol>
+                      <li>Sign up for free at <a href="https://neon.tech" target="_blank" rel="noopener noreferrer">neon.tech ↗</a>.</li>
+                      <li>Create a new project (takes ~2 seconds).</li>
+                      <li>Copy the <strong>Connection string</strong> (Postgres URI) and paste it above.</li>
+                    </ol>
+                  </div>
+                </article>
+
+                <article class="settings-card profile-card">
+                  <div class="settings-card-head">
+                    <div class="user-avatar-lg" id="settings-user-avatar">AM</div>
+                    <div>
+                      <h3 id="settings-user-name">Alex Morgan</h3>
+                      <span class="profile-role" id="settings-user-role">Product Marketing Lead</span>
+                    </div>
+                  </div>
+                  <div class="profile-details-list">
+                    <div class="profile-detail-row">
+                      <span class="detail-label">Email</span>
+                      <span class="detail-val" id="settings-user-email">alex@meetflow.ai</span>
+                    </div>
+                    <div class="profile-detail-row">
+                      <span class="detail-label">Department</span>
+                      <span class="detail-val" id="settings-user-dept">Marketing & Strategy</span>
+                    </div>
+                    <div class="profile-detail-row">
+                      <span class="detail-label">Storage Backend</span>
+                      <span class="detail-val" id="settings-db-provider">Local Database</span>
+                    </div>
+                  </div>
+                  <div class="settings-actions" style="margin-top:20px;">
+                    <button class="button button-outline button-danger" id="logout-btn" type="button">Sign Out</button>
+                    <button class="button button-light" id="switch-account-btn" type="button">Switch Account</button>
+                  </div>
+                </article>
+              </div>
+            </section>
+          </div>
+
+        </section>
+
+        <section class="detail-panel" id="detail-panel" hidden></section>
+        <footer class="page-footer"><span>MEETFLOW <span class="footer-dot">●</span> ASSEMBLYAI</span><span>Built for the work after the meeting.</span></footer>
+      </div>
+    </main>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <dialog class="meeting-dialog assistant-dialog" id="assistant-dialog">
+    <div class="assistant-dialog-content">
+      <div class="dialog-top"><span class="eyebrow muted-eyebrow">MEETING ASSISTANT</span><button class="icon-button dialog-close" id="assistant-close" type="button" aria-label="Close assistant">×</button></div>
+      <h2>Ask about your meetings.</h2>
+      <p class="assistant-description">Get answers from saved transcripts, decisions, actions, and deadlines.</p>
+      <section id="assistant-setup">
+        <p>Your questions and saved meeting context are sent to Groq over HTTPS. The API key stays in memory for this app session.</p>
+        <form id="assistant-key-form">
+          <label class="field-label" for="assistant-key">GROQ API KEY</label>
+          <input class="dialog-input" id="assistant-key" type="password" autocomplete="off" required minlength="16" placeholder="Paste your Groq API key">
+          <div class="dialog-footer"><a class="provider-link" href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer">Get a Groq API key ↗</a><button class="button button-dark" id="assistant-connect" type="submit">Connect</button></div>
+          <div class="provider-error" id="assistant-key-error" role="status"></div>
+        </form>
+      </section>
+      <section id="assistant-chat" hidden>
+        <div class="assistant-messages" id="assistant-messages" role="log" aria-live="polite"></div>
+        <form id="assistant-chat-form" class="assistant-chat-form">
+          <label class="field-label" for="assistant-question">YOUR QUESTION</label>
+          <textarea class="dialog-textarea assistant-question" id="assistant-question" rows="2" maxlength="2000" placeholder="What deadlines did we agree on?" required></textarea>
+          <div class="dialog-footer"><button class="text-button" id="assistant-disconnect" type="button">Change API key</button><button class="button button-dark" id="assistant-send" type="submit">Ask <span>↗</span></button></div>
+        </form>
+      </section>
+    </div>
+  </dialog>
+  <dialog class="meeting-dialog auth-dialog" id="auth-dialog">
+    <div class="auth-dialog-content">
+      <div class="dialog-top">
+        <span class="eyebrow muted-eyebrow">EMPLOYEE ACCESS</span>
+        <button class="icon-button dialog-close" id="auth-close" type="button" aria-label="Close dialog">×</button>
+      </div>
+      <div class="auth-tabs">
+        <button class="auth-tab-btn active" id="auth-tab-signin" type="button">Sign In</button>
+        <button class="auth-tab-btn" id="auth-tab-register" type="button">Register Employee</button>
+      </div>
+
+      <!-- Sign In Form -->
+      <form id="signin-form" class="auth-form">
+        <label class="field-label" for="signin-email">EMAIL ADDRESS</label>
+        <input class="dialog-input" id="signin-email" type="email" placeholder="alex@meetflow.ai" required autocomplete="username">
+        <label class="field-label" for="signin-password">PASSWORD</label>
+        <input class="dialog-input" id="signin-password" type="password" placeholder="••••••••" required autocomplete="current-password">
+        <div class="auth-helper">Demo account: <code>alex@meetflow.ai</code> / <code>meetflow123</code></div>
+        <div class="dialog-footer">
+          <span class="auth-feedback" id="signin-feedback" role="status"></span>
+          <button class="button button-dark" type="submit">Sign In <span>↗</span></button>
+        </div>
+      </form>
+
+      <!-- Register Form -->
+      <form id="register-form" class="auth-form" hidden>
+        <label class="field-label" for="reg-name">FULL NAME</label>
+        <input class="dialog-input" id="reg-name" type="text" placeholder="e.g. Sydney Chen" required>
+        <label class="field-label" for="reg-email">EMAIL ADDRESS</label>
+        <input class="dialog-input" id="reg-email" type="email" placeholder="e.g. sydney@meetflow.ai" required autocomplete="username">
+        <label class="field-label" for="reg-dept">DEPARTMENT</label>
+        <input class="dialog-input" id="reg-dept" type="text" placeholder="e.g. Engineering">
+        <label class="field-label" for="reg-role">ROLE / TITLE</label>
+        <input class="dialog-input" id="reg-role" type="text" placeholder="e.g. Frontend Engineer">
+        <label class="field-label" for="reg-password">PASSWORD</label>
+        <input class="dialog-input" id="reg-password" type="password" placeholder="At least 6 characters" minlength="6" required autocomplete="new-password">
+        <div class="dialog-footer">
+          <span class="auth-feedback" id="reg-feedback" role="status"></span>
+          <button class="button button-dark" type="submit">Register Employee <span>↗</span></button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+  <dialog class="meeting-dialog" id="meeting-dialog"><form method="dialog" id="notes-form"><div class="dialog-top"><span class="eyebrow muted-eyebrow">START WITH NOTES</span><button class="icon-button dialog-close" aria-label="Close">×</button></div><h2>Already have the notes?</h2><p>Paste a transcript and we’ll turn it into a working project brief.</p><label class="field-label" for="notes-title">MEETING NAME</label><input class="dialog-input" id="notes-title" placeholder="e.g. Website launch planning" maxlength="120"><label class="field-label" for="notes-transcript">TRANSCRIPT</label><textarea class="dialog-textarea" id="notes-transcript" placeholder="Paste the conversation here…" required minlength="12"></textarea><div class="dialog-footer"><span>Extracted locally from your notes</span><button class="button button-dark" id="generate-button" type="submit">Generate brief <span>↗</span></button></div></form></dialog>
+  <script type="module" src="/landing.js"></script>
+  <script src="/app.js" defer></script>
+</body>
+</html>

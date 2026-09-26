@@ -1,0 +1,10 @@
+.venv/
+data/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.vercel/
+*debug*.py
+data/
+.env
+.env.local

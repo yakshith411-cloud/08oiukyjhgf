@@ -1,0 +1,9 @@
+Recording: ES2002a.Mix-Headset.wav
+Source: AMI Meeting Corpus, University of Edinburgh Centre for Speech Technology Research
+Meeting: ES2002a, scenario design-team meeting
+License: Creative Commons Attribution 4.0 International (CC BY 4.0)
+License URL: https://creativecommons.org/licenses/by/4.0/
+Recording URL: https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/ES2002a/audio/ES2002a.Mix-Headset.wav
+Corpus URL: https://groups.inf.ed.ac.uk/ami/corpus/
+
+Attribute the AMI Meeting Corpus and University of Edinburgh when sharing or reusing this recording. No endorsement by the corpus creators is implied.
