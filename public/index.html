@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="/local.css?v=ui-20260926-2">
   <link rel="stylesheet" href="/landing.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js"}}</script>
 </head>
 <body>
@@ -52,10 +53,10 @@
       </nav>
       <div class="sidebar-bottom">
         <div class="sidebar-user-block" id="sidebar-user-block" tabindex="0" role="button" title="View profile or switch account">
-          <div class="user-avatar" id="sidebar-user-avatar">AM</div>
+          <div class="user-avatar" id="sidebar-user-avatar">MF</div>
           <div class="user-info">
-            <b id="sidebar-user-name">Alex Morgan</b>
-            <small id="sidebar-user-role">Product Marketing Lead</small>
+            <b id="sidebar-user-name">Guest User</b>
+            <small id="sidebar-user-role">Sign in to sync</small>
           </div>
           <button class="icon-button user-auth-btn" id="sidebar-auth-trigger" type="button" title="Sign out or switch account" aria-label="Account options">⋮</button>
         </div>
@@ -353,7 +354,7 @@
           <div class="kpi-grid">
             <article class="kpi-card"><span class="kpi-label">TOTAL COLLEAGUES</span><div class="kpi-value" id="team-count">0</div><span class="kpi-foot"><span class="kpi-tag positive">Active members</span> In company</span></article>
             <article class="kpi-card"><span class="kpi-label">ACTIVE DEPARTMENTS</span><div class="kpi-value">5</div><span class="kpi-foot"><span class="kpi-tag neutral">Cross-functional</span> Working groups</span></article>
-            <article class="kpi-card"><span class="kpi-label">LEAD ATTENDEE</span><div class="kpi-value" style="font-size:18px; margin:8px 0 4px;">Alex Morgan</div><span class="kpi-foot"><span class="kpi-tag info">14 meetings</span> Product Lead</span></article>
+            <article class="kpi-card"><span class="kpi-label">LEAD ATTENDEE</span><div class="kpi-value" id="team-lead-attendee" style="font-size:18px; margin:8px 0 4px;">—</div><span class="kpi-foot" id="team-lead-attendee-foot"><span class="kpi-tag neutral">0 meetings</span> No active members</span></article>
             <article class="kpi-card"><span class="kpi-label">AVERAGE ALIGNMENT</span><div class="kpi-value">96%</div><span class="kpi-foot"><span class="kpi-tag positive">High alignment</span> Team score</span></article>
           </div>
 
@@ -524,16 +525,16 @@
               <article class="content-card settings-card">
                 <div class="card-head">
                   <div style="display:flex; align-items:center; gap:12px;">
-                    <div class="user-avatar-lg" id="settings-user-avatar">AM</div>
+                    <div class="user-avatar-lg" id="settings-user-avatar">MF</div>
                     <div>
-                      <h3 class="card-title" id="settings-user-name">Alex Morgan</h3>
-                      <span class="profile-role" id="settings-user-role" style="font-size:10.5px; color:#7a857e;">Product Marketing Lead</span>
+                      <h3 class="card-title" id="settings-user-name">Guest User</h3>
+                      <span class="profile-role" id="settings-user-role" style="font-size:10.5px; color:#7a857e;">Sign in to sync meetings</span>
                     </div>
                   </div>
                 </div>
                 <div class="profile-details-list">
-                  <div class="profile-detail-row"><span class="detail-label">Email</span><span class="detail-val" id="settings-user-email">alex@meetflow.ai</span></div>
-                  <div class="profile-detail-row"><span class="detail-label">Department</span><span class="detail-val" id="settings-user-dept">Marketing &amp; Strategy</span></div>
+                  <div class="profile-detail-row"><span class="detail-label">Email</span><span class="detail-val" id="settings-user-email">—</span></div>
+                  <div class="profile-detail-row"><span class="detail-label">Department</span><span class="detail-val" id="settings-user-dept">—</span></div>
                   <div class="profile-detail-row"><span class="detail-label">Database Provider</span><span class="detail-val" id="settings-db-provider">Local Database</span></div>
                 </div>
                 <div class="settings-actions" style="margin-top:16px;">
@@ -685,13 +686,28 @@
         <button class="auth-tab-btn" id="auth-tab-register" type="button">Register Employee</button>
       </div>
 
+      <!-- Google Sign In Option -->
+      <div class="google-auth-container">
+        <button class="google-signin-btn" id="google-signin-btn" type="button">
+          <svg class="google-icon" viewBox="0 0 24 24" width="18" height="18">
+            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+          </svg>
+          <span>Continue with Google</span>
+        </button>
+        <div class="auth-divider">
+          <span>or with email &amp; password</span>
+        </div>
+      </div>
+
       <!-- Sign In Form -->
       <form id="signin-form" class="auth-form">
         <label class="field-label" for="signin-email">EMAIL ADDRESS</label>
-        <input class="dialog-input" id="signin-email" type="email" placeholder="alex@meetflow.ai" required autocomplete="username">
+        <input class="dialog-input" id="signin-email" type="email" placeholder="you@company.com" required autocomplete="username">
         <label class="field-label" for="signin-password">PASSWORD</label>
         <input class="dialog-input" id="signin-password" type="password" placeholder="••••••••" required autocomplete="current-password">
-        <div class="auth-helper">Demo account: <code>alex@meetflow.ai</code> / <code>meetflow123</code></div>
         <div class="dialog-footer">
           <span class="auth-feedback" id="signin-feedback" role="status"></span>
           <button class="button button-dark" type="submit">Sign In <span>↗</span></button>

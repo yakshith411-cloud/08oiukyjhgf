@@ -253,111 +253,13 @@ def init_db() -> None:
         meet_link TEXT NOT NULL,
         agenda TEXT,
         department TEXT DEFAULT 'All Departments',
-        created_by TEXT DEFAULT 'Alex Morgan (Boss)',
+        created_by TEXT DEFAULT 'Host',
         status TEXT DEFAULT 'scheduled',
         created_at TEXT NOT NULL
     )
     """)
 
-    sample_meet = db_query("SELECT id FROM scheduled_meetings LIMIT 1")
-    if not sample_meet:
-        now_dt = datetime.now(timezone.utc)
-        demo_time_1 = (now_dt + timedelta(days=1)).replace(hour=10, minute=0, second=0, microsecond=0).isoformat()
-        demo_time_2 = (now_dt + timedelta(days=3)).replace(hour=14, minute=30, second=0, microsecond=0).isoformat()
-        db_execute("""
-            INSERT INTO scheduled_meetings (id, title, scheduled_at, duration_minutes, meet_link, agenda, department, created_by, status, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            "sched_demo_1",
-            "Q4 Strategic Roadmap & Executive All-Hands",
-            demo_time_1,
-            45,
-            "https://meet.google.com/abc-defg-hij",
-            "• Q4 Objectives and customer expansion milestones\n• Product demo of upcoming Meetflow enterprise features\n• Open Q&A session with team leads",
-            "All Departments",
-            "Alex Morgan (Boss)",
-            "scheduled",
-            now()
-        ))
-        db_execute("""
-            INSERT INTO scheduled_meetings (id, title, scheduled_at, duration_minutes, meet_link, agenda, department, created_by, status, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            "sched_demo_2",
-            "Engineering Architecture & Infrastructure Sync",
-            demo_time_2,
-            60,
-            "https://meet.google.com/xyz-uvwx-rst",
-            "• Database migration review (Supabase & Neon PostgreSQL)\n• Real-time WebSocket streaming performance\n• CI/CD and deployment pipeline checklist",
-            "Engineering & Security",
-            "Alex Morgan (Boss)",
-            "scheduled",
-            now()
-        ))
 
-    demo_id = "emp_alex"
-    alex = db_query("SELECT id FROM employees WHERE id = ?", (demo_id,), fetch="one")
-    if not alex:
-        salt = secrets.token_hex(16)
-        pwd_hash = hashlib.pbkdf2_hmac("sha256", "meetflow123".encode(), salt.encode(), 100000).hex()
-        db_execute(
-            "INSERT INTO employees (id, name, email, password_hash, salt, role, department, avatar_color, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (demo_id, "Alex Morgan", "alex@meetflow.ai", pwd_hash, salt, "Executive Lead (Boss)", "Product & Strategy", "#2e644b", now())
-        )
-    else:
-        db_execute("UPDATE employees SET role = 'Executive Lead (Boss)' WHERE id = 'emp_alex' AND role != 'Executive Lead (Boss)'")
-
-    team = [
-        ("emp_sydney", "Sydney Chen", "sydney@meetflow.ai", "Security Architect", "Security", "#448c73"),
-        ("emp_brian", "Brian Patel", "brian@meetflow.ai", "Staff Platform Engineer", "SCM & Platform", "#4a709c"),
-        ("emp_cormac", "Cormac Ryan", "cormac@meetflow.ai", "Senior Product Manager", "Plan & Strategy", "#9c704a"),
-        ("emp_samia", "Samia Khan", "samia@meetflow.ai", "Operations Lead", "Monitor & SRE", "#7a4a9c"),
-    ]
-    for tid, tname, temail, trole, tdept, tcolor in team:
-        existing = db_query("SELECT id FROM employees WHERE id = ?", (tid,), fetch="one")
-        if not existing:
-            tsalt = secrets.token_hex(16)
-            thash = hashlib.pbkdf2_hmac("sha256", "meetflow123".encode(), tsalt.encode(), 100000).hex()
-            db_execute(
-                "INSERT INTO employees (id, name, email, password_hash, salt, role, department, avatar_color, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (tid, tname, temail, thash, tsalt, trole, tdept, tcolor, now())
-            )
-
-    months_data = [
-        ("2025-10", 8, 380, 4),
-        ("2025-11", 11, 510, 6),
-        ("2025-12", 7, 320, 3),
-        ("2026-01", 12, 590, 8),
-        ("2026-02", 14, 680, 7),
-        ("2026-03", 16, 790, 11),
-        ("2026-04", 13, 620, 9),
-        ("2026-05", 17, 840, 12),
-        ("2026-06", 19, 910, 14),
-        ("2026-07", 15, 720, 10),
-        ("2026-08", 16, 780, 11),
-        ("2026-09", 18, 860, 13),
-    ]
-    for m_key, count, minutes, tasks in months_data:
-        for i in range(count):
-            aid = f"att_{m_key}_{i}"
-            existing_att = db_query("SELECT id FROM attendance WHERE id = ?", (aid,), fetch="one")
-            if not existing_att:
-                db_execute(
-                    "INSERT INTO attendance (id, employee_id, meeting_id, meeting_title, month_key, attended_at, duration_minutes, tasks_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    (aid, demo_id, f"m_{m_key}_{i}", f"Product Strategy & Marketing Sync #{i+1}", m_key, f"{m_key}-{10 + (i % 15):02d}T10:00:00Z", minutes // count, 1 if i < tasks else 0)
-                )
-
-    for tid, _, _, _, _, _ in team:
-        for m_key, count, minutes, tasks in months_data[-6:]:
-            sub_count = max(3, count - 5)
-            for i in range(sub_count):
-                aid = f"att_{tid}_{m_key}_{i}"
-                existing_att = db_query("SELECT id FROM attendance WHERE id = ?", (aid,), fetch="one")
-                if not existing_att:
-                    db_execute(
-                        "INSERT INTO attendance (id, employee_id, meeting_id, meeting_title, month_key, attended_at, duration_minutes, tasks_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                        (aid, tid, f"m_{m_key}_{i}", f"Team Alignment Sync #{i+1}", m_key, f"{m_key}-{10 + (i % 15):02d}T11:00:00Z", 45, 1)
-                    )
 
 
 def hash_password(password: str, salt: str | None = None) -> tuple[str, str]:
@@ -396,8 +298,7 @@ def get_current_user_from_headers(headers: dict) -> dict | None:
             user = db_query("SELECT id, name, email, role, department, avatar_color, created_at FROM employees WHERE id = ?", (session["employee_id"],), fetch="one")
             if user:
                 return user
-    default_user = db_query("SELECT id, name, email, role, department, avatar_color, created_at FROM employees ORDER BY created_at ASC LIMIT 1", fetch="one")
-    return default_user
+    return None
 
 
 def get_all_employees_with_stats() -> list[dict]:
@@ -572,7 +473,10 @@ def get_monthly_attendance_graph(employee_id: str, range_months: int = 12) -> di
 def record_meeting_attendance(meeting_id: str, title: str, tasks_count: int = 0, employee_id: str | None = None) -> None:
     if not employee_id:
         default_user = db_query("SELECT id FROM employees ORDER BY created_at ASC LIMIT 1", fetch="one")
-        employee_id = default_user["id"] if default_user else "emp_alex"
+        if default_user:
+            employee_id = default_user["id"]
+        else:
+            return
     m_now = datetime.now(timezone.utc)
     month_key = f"{m_now.year}-{m_now.month:02d}"
     aid = f"att_{uuid.uuid4().hex[:8]}"
@@ -1702,7 +1606,10 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/analytics/monthly":
             query = parse_qs(urlparse(self.path).query)
             user = get_current_user_from_headers(self.headers)
-            emp_id = query.get("employeeId", [user["id"] if user else "emp_alex"])[0]
+            emp_id = query.get("employeeId", [user["id"] if user else ""])[0]
+            if not emp_id:
+                first_emp = db_query("SELECT id FROM employees ORDER BY created_at ASC LIMIT 1", fetch="one")
+                emp_id = first_emp["id"] if first_emp else ""
             range_val = int(query.get("range", ["12"])[0])
             return self.send_json(get_monthly_attendance_graph(emp_id, range_val))
         if path in ("/api/settings/neon", "/api/settings/supabase", "/api/settings/database"):
@@ -1715,6 +1622,7 @@ class Handler(BaseHTTPRequestHandler):
                 "provider": get_db_provider_name(),
                 "databaseUrl": url,
                 "supabaseUrl": sb_url,
+                "supabaseKey": cfg.get("supabaseKey", ""),
                 "hasSupabaseKey": bool(cfg.get("supabaseKey")),
                 "maskedUrl": masked,
                 "hasPsycopg2": HAVE_PSYCOPG2,
@@ -1799,6 +1707,28 @@ class Handler(BaseHTTPRequestHandler):
                 token = create_session(user_record["id"])
                 user = {k: user_record[k] for k in ["id", "name", "email", "role", "department", "avatar_color", "created_at"]}
                 return self.send_json({"token": token, "user": user, "employee": user})
+            if path == "/api/auth/google-sync":
+                payload = self.read_json()
+                email = str(payload.get("email", "")).strip().lower()
+                name = str(payload.get("name", "")).strip() or email.split("@")[0].title()
+                if not email or "@" not in email:
+                    return self.send_json({"error": "Invalid email address from Google provider."}, 400)
+                existing = db_query("SELECT id, name, email, role, department, avatar_color, created_at FROM employees WHERE email = ?", (email,), fetch="one")
+                if existing:
+                    emp_id = existing["id"]
+                    user = existing
+                else:
+                    emp_id = f"emp_{uuid.uuid4().hex[:10]}"
+                    role = "Boss" if any(k in email for k in ("boss", "admin", "lead")) else "Employee"
+                    colors = ["#2e644b", "#448c73", "#4a709c", "#9c704a", "#7a4a9c", "#3c7a89"]
+                    color = colors[len(email) % len(colors)]
+                    db_execute(
+                        "INSERT INTO employees (id, name, email, password_hash, salt, role, department, avatar_color, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (emp_id, name, email, "oauth_google", "oauth", role, "General", color, now())
+                    )
+                    user = db_query("SELECT id, name, email, role, department, avatar_color, created_at FROM employees WHERE id = ?", (emp_id,), fetch="one")
+                token = create_session(emp_id)
+                return self.send_json({"token": token, "user": user, "employee": user})
             if path == "/api/auth/logout":
                 token = self.headers.get("Authorization", "").removeprefix("Bearer ").strip()
                 if token:
@@ -1863,7 +1793,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not meet_link:
                     return self.send_json({"error": "Please provide or generate a Google Meet link."}, 400)
                 user = get_current_user_from_headers(self.headers)
-                creator = user["name"] if user else "Alex Morgan (Boss)"
+                creator = user["name"] if user else "Host"
                 meeting = create_scheduled_meeting(
                     title=title,
                     scheduled_at=scheduled_at,

@@ -955,6 +955,22 @@ function renderTeamGrid() {
 
   const countEl = $("#team-count");
   if (countEl) countEl.textContent = members.length;
+
+  const leadEl = $("#team-lead-attendee");
+  const leadFoot = $("#team-lead-attendee-foot");
+  if (leadEl) {
+    if (state.teamMembers && state.teamMembers.length > 0) {
+      const sorted = [...state.teamMembers].sort((a, b) => (b.meetingsCount || b.meetings_attended || 0) - (a.meetingsCount || a.meetings_attended || 0));
+      const top = sorted[0];
+      const topCount = top.meetingsCount || top.meetings_attended || 0;
+      leadEl.textContent = top.name;
+      if (leadFoot) leadFoot.innerHTML = `<span class="kpi-tag info">${topCount} meetings</span> ${escapeHtml(top.role || 'Member')}`;
+    } else {
+      leadEl.textContent = "—";
+      if (leadFoot) leadFoot.innerHTML = `<span class="kpi-tag neutral">0 meetings</span> No active members`;
+    }
+  }
+
   const grid = $("#team-grid");
   if (!grid) return;
   if (!members.length) {
@@ -1467,42 +1483,124 @@ const saveNeonSettings = saveSupabaseSettings;
 /* =========================================================
    Authentication & Employee Profile
    ========================================================= */
-async function initAuth() {
+function getSupabaseClient() {
+  const sbUrl = state.supabaseUrl || $("#supabase-url-input")?.value?.trim() || localStorage.getItem("meetflow_sb_url") || "";
+  const sbKey = state.supabaseKey || $("#supabase-key-input")?.value?.trim() || localStorage.getItem("meetflow_sb_key") || "";
+  if (!sbUrl || !sbKey || typeof window.supabase === "undefined") {
+    return null;
+  }
   try {
-    const res = await api("/api/auth/me");
-    state.currentUser = res.user || res.employee || res;
-    updateUserUI();
+    return window.supabase.createClient(sbUrl, sbKey);
   } catch (err) {
-    console.warn("Auth check:", err);
+    console.warn("Could not create Supabase client:", err);
+    return null;
   }
 }
 
+async function initAuth() {
+  try {
+    const sbSettings = await api("/api/settings/supabase");
+    if (sbSettings.supabaseUrl) {
+      state.supabaseUrl = sbSettings.supabaseUrl;
+      localStorage.setItem("meetflow_sb_url", sbSettings.supabaseUrl);
+    }
+    if (sbSettings.supabaseKey) {
+      state.supabaseKey = sbSettings.supabaseKey;
+      localStorage.setItem("meetflow_sb_key", sbSettings.supabaseKey);
+    }
+  } catch (e) {}
+
+  // Check if returning from Supabase Google OAuth redirect
+  const sbClient = getSupabaseClient();
+  if (sbClient) {
+    try {
+      const { data: { session } } = await sbClient.auth.getSession();
+      if (session && session.user && session.user.email) {
+        const gUser = session.user;
+        const res = await api("/api/auth/google-sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: gUser.email,
+            name: gUser.user_metadata?.full_name || gUser.user_metadata?.name || gUser.email.split("@")[0],
+            avatar_url: gUser.user_metadata?.avatar_url || "",
+          }),
+        });
+        state.token = res.token;
+        state.currentUser = res.employee || res.user;
+        localStorage.setItem("meetflow_auth_token", res.token);
+        if (window.location.hash && window.location.hash.includes("access_token")) {
+          window.history.replaceState(null, "", window.location.pathname);
+        }
+        updateUserUI();
+        showToast(`Signed in with Google as ${state.currentUser.name}`);
+        return;
+      }
+    } catch (sbErr) {
+      console.warn("Supabase session check error:", sbErr);
+    }
+  }
+
+  if (state.token) {
+    try {
+      const res = await api("/api/auth/me");
+      state.currentUser = res.user || res.employee || res;
+      updateUserUI();
+      return;
+    } catch (err) {
+      console.warn("Auth check:", err);
+      state.token = "";
+      state.currentUser = null;
+      localStorage.removeItem("meetflow_auth_token");
+    }
+  } else {
+    state.currentUser = null;
+  }
+  updateUserUI();
+}
+
 function updateUserUI() {
-  const user = state.currentUser || { name: "Alex Morgan", role: "Product Marketing Lead", email: "alex@meetflow.ai", department: "Marketing & Strategy" };
-  const initials = user.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase() || "MF";
+  const isAuthed = Boolean(state.token && state.currentUser);
+  const user = isAuthed ? state.currentUser : {
+    name: "Guest User",
+    role: "Not signed in",
+    email: "Sign in to access your meetings",
+    department: "—"
+  };
+  const initials = isAuthed
+    ? (user.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase() || "MF")
+    : "GU";
 
   const sideAvatar = $("#sidebar-user-avatar");
-  if (sideAvatar) sideAvatar.textContent = initials;
+  if (sideAvatar) {
+    sideAvatar.textContent = initials;
+    if (user.avatar_color) sideAvatar.style.background = user.avatar_color;
+    else sideAvatar.style.background = "";
+  }
   const sideName = $("#sidebar-user-name");
   if (sideName) sideName.textContent = user.name;
   const sideRole = $("#sidebar-user-role");
-  if (sideRole) sideRole.textContent = user.role || user.department || "Employee";
+  if (sideRole) sideRole.textContent = isAuthed ? (user.role || user.department || "Employee") : "Click to sign in";
 
   const authHeaderBtn = $("#auth-header-btn");
   if (authHeaderBtn) {
-    authHeaderBtn.textContent = state.token ? `${user.name.split(" ")[0]}` : "Sign in";
+    authHeaderBtn.textContent = isAuthed ? `${user.name.split(" ")[0]}` : "Sign in";
   }
 
   const setAvatar = $("#settings-user-avatar");
-  if (setAvatar) setAvatar.textContent = initials;
+  if (setAvatar) {
+    setAvatar.textContent = initials;
+    if (user.avatar_color) setAvatar.style.background = user.avatar_color;
+    else setAvatar.style.background = "";
+  }
   const setName = $("#settings-user-name");
   if (setName) setName.textContent = user.name;
   const setRole = $("#settings-user-role");
-  if (setRole) setRole.textContent = user.role || "Employee";
+  if (setRole) setRole.textContent = isAuthed ? (user.role || "Employee") : "Guest";
   const setEmail = $("#settings-user-email");
-  if (setEmail) setEmail.textContent = user.email || "—";
+  if (setEmail) setEmail.textContent = isAuthed ? (user.email || "—") : "Not signed in";
   const setDept = $("#settings-user-dept");
-  if (setDept) setDept.textContent = user.department || "General";
+  if (setDept) setDept.textContent = isAuthed ? (user.department || "General") : "—";
 }
 
 function openAuthDialog(tab = "signin") {
@@ -1520,8 +1618,59 @@ function switchAuthTab(tab) {
   $("#auth-tab-register")?.classList.toggle("active", !isSignIn);
   const signinForm = $("#signin-form");
   const regForm = $("#register-form");
+  const googleContainer = $(".google-auth-container");
   if (signinForm) signinForm.hidden = !isSignIn;
   if (regForm) regForm.hidden = isSignIn;
+  if (googleContainer) googleContainer.style.display = isSignIn ? "flex" : "none";
+}
+
+async function handleGoogleSignIn() {
+  const feedback = $("#signin-feedback");
+  let sbClient = getSupabaseClient();
+  if (!sbClient) {
+    try {
+      const sbSettings = await api("/api/settings/supabase");
+      if (sbSettings.supabaseUrl) {
+        state.supabaseUrl = sbSettings.supabaseUrl;
+        localStorage.setItem("meetflow_sb_url", sbSettings.supabaseUrl);
+      }
+      if (sbSettings.supabaseKey) {
+        state.supabaseKey = sbSettings.supabaseKey;
+        localStorage.setItem("meetflow_sb_key", sbSettings.supabaseKey);
+      }
+      sbClient = getSupabaseClient();
+    } catch {}
+  }
+
+  if (!sbClient) {
+    if (feedback) {
+      feedback.textContent = "Supabase credentials required. Please enter Supabase URL & Anon Key in Settings.";
+      feedback.style.color = "#a12b2b";
+    }
+    showToast("Please enter Supabase URL & Anon Key in Settings first.");
+    return;
+  }
+
+  if (feedback) {
+    feedback.textContent = "Redirecting to Google…";
+    feedback.style.color = "#245e43";
+  }
+
+  try {
+    const { error } = await sbClient.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: window.location.origin + "/meetings",
+      },
+    });
+    if (error) throw error;
+  } catch (err) {
+    if (feedback) {
+      feedback.textContent = err.message || "Failed to start Google sign-in.";
+      feedback.style.color = "#a12b2b";
+    }
+    showToast(err.message || "Google sign-in failed.");
+  }
 }
 
 async function handleSignIn(e) {
@@ -1544,6 +1693,7 @@ async function handleSignIn(e) {
     $("#auth-dialog").close();
     showToast(`Welcome back, ${res.employee.name}!`);
     if (state.view === "analytics") loadMonthlyAnalytics(state.analyticsRange);
+    if (state.view === "team") loadTeamDirectory();
   } catch (err) {
     feedback.textContent = err.message;
     feedback.style.color = "#a12b2b";
@@ -1586,11 +1736,19 @@ async function handleLogout() {
       await api("/api/auth/logout", { method: "POST" });
     } catch {}
   }
+  const sbClient = getSupabaseClient();
+  if (sbClient) {
+    try {
+      await sbClient.auth.signOut();
+    } catch {}
+  }
   state.token = "";
+  state.currentUser = null;
   localStorage.removeItem("meetflow_auth_token");
   showToast("Signed out.");
-  await initAuth();
+  updateUserUI();
   if (state.view === "analytics") loadMonthlyAnalytics(state.analyticsRange);
+  if (state.view === "team") loadTeamDirectory();
 }
 
 state.selectedAudioFile = null;
@@ -1821,6 +1979,7 @@ $("#auth-header-btn")?.addEventListener("click", () => {
 $("#auth-close")?.addEventListener("click", () => $("#auth-dialog")?.close());
 $("#auth-tab-signin")?.addEventListener("click", () => switchAuthTab("signin"));
 $("#auth-tab-register")?.addEventListener("click", () => switchAuthTab("register"));
+$("#google-signin-btn")?.addEventListener("click", handleGoogleSignIn);
 $("#signin-form")?.addEventListener("submit", handleSignIn);
 $("#register-form")?.addEventListener("submit", handleRegister);
 $("#logout-btn")?.addEventListener("click", handleLogout);

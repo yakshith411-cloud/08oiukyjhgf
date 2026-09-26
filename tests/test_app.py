@@ -347,10 +347,21 @@ class MeetingAnalysisTests(unittest.TestCase):
             temp_path = Path(temp_dir)
             with patch("app.DATA_DIR", temp_path):
                 meetflow_app.init_db()
-                # Test default seeded user
-                user_rec = meetflow_app.db_query("SELECT * FROM employees WHERE email = ?", ("alex@meetflow.ai",), fetch="one")
+                # Verify zero default users seeded
+                existing = meetflow_app.db_query("SELECT COUNT(*) as count FROM employees", fetch="one")
+                self.assertEqual(existing["count"], 0)
+
+                # Test registering new employee
+                pwd_hash, salt = meetflow_app.hash_password("meetflow123")
+                emp_id = "emp_live_test"
+                meetflow_app.db_execute(
+                    "INSERT INTO employees (id, name, email, password_hash, salt, role, department, avatar_color, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (emp_id, "Jordan Lee", "jordan@meetflow.ai", pwd_hash, salt, "Employee", "Product", "#2e644b", meetflow_app.now())
+                )
+
+                user_rec = meetflow_app.db_query("SELECT * FROM employees WHERE email = ?", ("jordan@meetflow.ai",), fetch="one")
                 self.assertIsNotNone(user_rec)
-                self.assertEqual(user_rec["name"], "Alex Morgan")
+                self.assertEqual(user_rec["name"], "Jordan Lee")
                 self.assertTrue(meetflow_app.verify_password("meetflow123", user_rec["password_hash"], user_rec["salt"]))
                 self.assertFalse(meetflow_app.verify_password("wrongpassword", user_rec["password_hash"], user_rec["salt"]))
 
@@ -360,20 +371,54 @@ class MeetingAnalysisTests(unittest.TestCase):
                 resolved = meetflow_app.get_current_user_from_headers({"Authorization": f"Bearer {token}"})
                 self.assertIsNotNone(resolved)
                 self.assertEqual(resolved["id"], user_rec["id"])
-                self.assertEqual(resolved["email"], "alex@meetflow.ai")
+                self.assertEqual(resolved["email"], "jordan@meetflow.ai")
+
+    def test_google_oauth_sync_flow(self):
+        with TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            with patch("app.DATA_DIR", temp_path):
+                meetflow_app.init_db()
+                email = "alex.google@example.com"
+                name = "Alex Google"
+                emp_id = f"emp_goog_{meetflow_app.uuid.uuid4().hex[:8]}"
+                meetflow_app.db_execute(
+                    "INSERT INTO employees (id, name, email, password_hash, salt, role, department, avatar_color, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (emp_id, name, email, "oauth_google", "oauth", "Employee", "General", "#2e644b", meetflow_app.now())
+                )
+                token = meetflow_app.create_session(emp_id)
+                self.assertTrue(token)
+
+                user = meetflow_app.get_current_user_from_headers({"Authorization": f"Bearer {token}"})
+                self.assertIsNotNone(user)
+                self.assertEqual(user["email"], email)
+                self.assertEqual(user["name"], name)
 
     def test_monthly_attendance_graph_data(self):
         with TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
             with patch("app.DATA_DIR", temp_path):
                 meetflow_app.init_db()
-                analytics = meetflow_app.get_monthly_attendance_graph("emp_alex", range_months=12)
-                self.assertEqual(analytics["employeeId"], "emp_alex")
-                self.assertGreater(analytics["totalMeetings"], 0)
+                # Test zero attendance when empty
+                empty_analytics = meetflow_app.get_monthly_attendance_graph("emp_none", range_months=12)
+                self.assertEqual(empty_analytics["totalMeetings"], 0)
+                self.assertEqual(empty_analytics["totalHours"], 0)
+                self.assertEqual(len(empty_analytics["recentMeetings"]), 0)
+
+                # Register live employee and record live attendance
+                emp_id = "emp_live_att"
+                meetflow_app.db_execute(
+                    "INSERT INTO employees (id, name, email, password_hash, salt, role, department, avatar_color, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (emp_id, "Alex User", "alex@meetflow.ai", "h", "s", "Employee", "Engineering", "#2e644b", meetflow_app.now())
+                )
+                meetflow_app.record_meeting_attendance("meet_1", "Sprint Planning", tasks_count=3, employee_id=emp_id)
+                meetflow_app.record_meeting_attendance("meet_2", "Design Review", tasks_count=2, employee_id=emp_id)
+
+                analytics = meetflow_app.get_monthly_attendance_graph(emp_id, range_months=12)
+                self.assertEqual(analytics["employeeId"], emp_id)
+                self.assertEqual(analytics["totalMeetings"], 2)
+                self.assertEqual(analytics["totalTasks"], 5)
                 self.assertGreater(analytics["totalHours"], 0)
-                self.assertEqual(len(analytics["months"]), 12)
-                self.assertTrue(any(m["count"] > 0 for m in analytics["months"]))
-                self.assertTrue(len(analytics["recentMeetings"]) > 0)
+                self.assertEqual(len(analytics["recentMeetings"]), 2)
 
 
     def test_boss_meetings_scheduling_and_crud(self):
@@ -388,9 +433,9 @@ class MeetingAnalysisTests(unittest.TestCase):
                 link2 = meetflow_app.format_meet_link("https://meet.google.com/xyz-uvwx-rst")
                 self.assertEqual(link2, "https://meet.google.com/xyz-uvwx-rst")
 
-                # Verify auto-seeded meetings exist
+                # Verify clean start - zero seeded meetings
                 all_meetings = meetflow_app.get_all_scheduled_meetings()
-                self.assertGreaterEqual(len(all_meetings), 2)
+                self.assertEqual(len(all_meetings), 0)
 
                 # Test creating scheduled meeting
                 created = meetflow_app.create_scheduled_meeting(
@@ -400,7 +445,7 @@ class MeetingAnalysisTests(unittest.TestCase):
                     meet_link="https://meet.google.com/test-meet-123",
                     agenda="• Key roadmap goals\n• Supabase auth & PostgreSQL integration",
                     department="Engineering & Executive",
-                    created_by="Alex Morgan (Boss)"
+                    created_by="Host"
                 )
                 self.assertTrue(created["id"].startswith("sched_"))
                 self.assertEqual(created["title"], "Executive Strategy Review")
@@ -421,7 +466,7 @@ class MeetingAnalysisTests(unittest.TestCase):
                 deleted = meetflow_app.delete_scheduled_meeting(created["id"])
                 self.assertTrue(deleted)
                 remaining = meetflow_app.get_all_scheduled_meetings()
-                self.assertFalse(any(m["id"] == created["id"] for m in remaining))
+                self.assertEqual(len(remaining), 0)
 
     def test_supabase_db_config(self):
         with TemporaryDirectory() as temp_dir:
