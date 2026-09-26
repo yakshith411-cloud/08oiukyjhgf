@@ -15,7 +15,7 @@
     <header class="landing-header">
       <a class="landing-brand" href="/" aria-label="Meetflow home"><span class="landing-brand-mark">MF</span><span>meetflow</span></a>
       <span class="landing-nav-note">Meeting intelligence · 01</span>
-      <a class="landing-cta" href="#app">Get started <span aria-hidden="true">↗</span></a>
+      <a class="landing-cta" href="/meetings">Get started <span aria-hidden="true">↗</span></a>
     </header>
     <main class="landing-hero">
       <canvas class="liquid-scene" id="liquid-scene" aria-hidden="true"></canvas>
@@ -24,7 +24,7 @@
         <h1 class="landing-title">Meetflow<span><em>.</em></span></h1>
         <p class="landing-copy">Meetings end. Momentum doesn’t. Keep the important things moving after the room goes quiet.</p>
         <div class="landing-actions">
-          <a class="landing-cta" href="#app">Get started <span aria-hidden="true">↗</span></a>
+          <a class="landing-cta" href="/meetings">Get started <span aria-hidden="true">↗</span></a>
           <span class="landing-microcopy">A clearer next step starts here.</span>
         </div>
       </div>
@@ -38,13 +38,12 @@
   </div>
   <div class="app-shell" hidden>
     <aside class="sidebar">
-      <a class="brand" href="/" aria-label="Meetflow home">
+      <a class="brand" href="/meetings" aria-label="Meetflow home">
         <span class="brand-mark"><span></span><span></span><span></span></span>
         <span>meetflow<span class="brand-period">.</span></span>
       </a>
       <nav class="primary-nav" aria-label="Primary navigation">
         <button class="nav-item active" data-view="meetings"><span class="nav-icon">▤</span>Meetings<span class="nav-count" id="meeting-count">0</span></button>
-        <button class="nav-item" data-view="boss"><span class="nav-icon">👑</span>Boss Portal</button>
         <button class="nav-item" data-view="analytics"><span class="nav-icon">📈</span>Monthly Analytics</button>
         <button class="nav-item" data-view="actions"><span class="nav-icon">✓</span>My actions<span class="nav-count" id="action-count">0</span></button>
         <button class="nav-item" data-view="team"><span class="nav-icon">👥</span>Team Directory</button>
@@ -145,9 +144,12 @@
             <section class="boss-page" id="boss-view" hidden>
               <div class="section-heading">
                 <div>
-                  <div class="eyebrow muted-eyebrow">EXECUTIVE PORTAL</div>
+                  <div class="eyebrow muted-eyebrow">👑 PRIVATE EXECUTIVE PORTAL</div>
                   <h2>Boss Workspace & Google Meet Scheduling</h2>
                   <p class="section-lead">Schedule company-wide or departmental meetings, generate Google Meet links, and broadcast agendas to employees.</p>
+                </div>
+                <div class="section-controls">
+                  <button class="button button-outline" id="boss-exit-btn" type="button" style="height:32px; font-size:12px; padding:0 14px;">← Back to Meetings Dashboard</button>
                 </div>
               </div>
 

@@ -6,11 +6,7 @@
       "destination": "/api/index.py"
     },
     {
-      "source": "/boss",
-      "destination": "/index.html"
-    },
-    {
-      "source": "/boss/(.*)",
+      "source": "/(meetings|analytics|actions|team|calendar|settings|boss|app)(/.*)?",
       "destination": "/index.html"
     }
   ]

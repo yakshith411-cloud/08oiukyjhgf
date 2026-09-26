@@ -700,7 +700,7 @@ function renderAllActions() {
   $$("#all-actions .action-remove").forEach((button) => button.addEventListener("click", () => removeAction(button.dataset.meetingId, button.dataset.taskId)));
 }
 
-function switchView(view) {
+function switchView(view, updateUrl = true) {
   state.view = view;
   const isMeetings = view === "meetings";
   const isBoss = view === "boss";
@@ -726,12 +726,15 @@ function switchView(view) {
 
   $("#detail-panel").hidden = !isMeetings || !state.activeId;
 
-  if (isBoss) {
-    if (window.location.pathname !== "/boss" && window.location.hash !== "#boss") {
-      try { history.pushState(null, "", "/boss"); } catch {}
+  if (updateUrl) {
+    const targetPath = "/" + view;
+    if (window.location.pathname !== targetPath) {
+      try {
+        history.pushState({ view }, "", targetPath);
+      } catch {
+        window.location.hash = "#" + view;
+      }
     }
-  } else if (window.location.pathname === "/boss") {
-    try { history.pushState(null, "", "/#app"); } catch {}
   }
 
   if (isMeetings) {
@@ -1715,18 +1718,26 @@ $("#switch-account-btn")?.addEventListener("click", () => openAuthDialog("signin
 // Boss Portal controls
 $("#boss-schedule-form")?.addEventListener("submit", handleBossScheduleSubmit);
 $("#generate-meet-link-btn")?.addEventListener("click", generateRandomMeetLink);
+$("#boss-exit-btn")?.addEventListener("click", () => switchView("meetings"));
 
-// Check direct /boss or #boss entry
+// Check direct URL route entry (/meetings, /analytics, /actions, /team, /calendar, /settings, /boss)
 function checkInitialRoute() {
-  const path = window.location.pathname.toLowerCase();
-  const hash = window.location.hash.toLowerCase();
-  if (path === "/boss" || path.startsWith("/boss/") || hash === "#boss") {
+  const path = window.location.pathname.toLowerCase().replace(/^\/+|\/+$/g, "");
+  const hash = window.location.hash.toLowerCase().replace(/^#\/?|\/+$/g, "");
+  const validViews = ["meetings", "analytics", "actions", "team", "calendar", "settings", "boss"];
+
+  let targetView = null;
+  if (validViews.includes(path)) targetView = path;
+  else if (validViews.includes(hash)) targetView = hash;
+  else if (path === "app" || hash === "app") targetView = "meetings";
+
+  if (targetView) {
     const landing = document.querySelector("#landing-page");
     const appShell = document.querySelector(".app-shell");
     if (landing) landing.hidden = true;
     if (appShell) appShell.hidden = false;
     document.body.classList.remove("landing-mode");
-    switchView("boss");
+    switchView(targetView, false);
   }
 }
 

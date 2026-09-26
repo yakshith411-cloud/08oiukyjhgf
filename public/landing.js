@@ -1,26 +1,43 @@
 const landingPage = document.querySelector("#landing-page");
 const appShell = document.querySelector(".app-shell");
 
-function isBossRoute() {
-  const path = window.location.pathname.toLowerCase();
-  const hash = window.location.hash.toLowerCase();
-  return path === "/boss" || path.startsWith("/boss/") || hash === "#boss";
+const APP_ROUTES = ["meetings", "analytics", "actions", "team", "calendar", "settings", "boss"];
+
+function getAppRoute() {
+  const path = window.location.pathname.toLowerCase().replace(/^\/+|\/+$/g, "");
+  const hash = window.location.hash.toLowerCase().replace(/^#\/?|\/+$/g, "");
+
+  if (APP_ROUTES.includes(path)) return path;
+  if (APP_ROUTES.includes(hash)) return hash;
+  if (hash === "app") return "meetings";
+  return null;
 }
 
 function syncView() {
-  const isBoss = isBossRoute();
-  const showApp = window.location.hash === "#app" || isBoss;
+  const route = getAppRoute();
+  const showApp = Boolean(route);
   landingPage.hidden = showApp;
   appShell.hidden = !showApp;
   document.body.classList.toggle("landing-mode", !showApp);
-  document.title = isBoss
-    ? "Meetflow Boss Portal — Executive Meeting Broadcast"
-    : showApp
-    ? "Meetflow — Meeting intelligence, in motion"
-    : "Meetflow — Meetings end. Momentum doesn't.";
 
-  if (isBoss && typeof window.switchView === "function") {
-    window.switchView("boss");
+  if (route === "boss") {
+    document.title = "Meetflow Boss Portal — Executive Meeting Broadcast";
+  } else if (showApp) {
+    const titles = {
+      meetings: "Meetings & Transcripts",
+      analytics: "Monthly Attendance Analytics",
+      actions: "My Actions & Follow-ups",
+      team: "Team Directory",
+      calendar: "Meeting Schedule & Calendar",
+      settings: "Settings & Supabase Database"
+    };
+    document.title = `Meetflow — ${titles[route] || "Workspace"}`;
+  } else {
+    document.title = "Meetflow — Meetings end. Momentum doesn't.";
+  }
+
+  if (showApp && typeof window.switchView === "function") {
+    window.switchView(route, false);
   }
 }
 

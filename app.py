@@ -35,6 +35,16 @@ DATA_FILE = DATA_DIR / "meetings.json"
 MAX_UPLOAD_BYTES = 250 * 1024 * 1024
 PORT_START = 54827
 ANALYSIS_VERSION = 11
+PAGE_ROUTES: frozenset[str] = frozenset([
+    "/", "/meetings", "/meetings/",
+    "/analytics", "/analytics/",
+    "/actions", "/actions/",
+    "/team", "/team/",
+    "/calendar", "/calendar/",
+    "/settings", "/settings/",
+    "/boss", "/boss/",
+    "/app", "/app/",
+])
 LOCK = threading.RLock()
 JOBS: dict[str, dict] = {}
 DATA_EPOCH = 0
@@ -1725,7 +1735,17 @@ class Handler(BaseHTTPRequestHandler):
                 if meeting and migrate_meeting_analysis(meeting):
                     write_meetings(meetings)
             return self.send_json(meeting or {"error": "Meeting not found."}, 200 if meeting else 404)
-        relative = "index.html" if path in ("/", "/boss", "/boss/") else path.lstrip("/")
+        PAGE_ROUTES = {
+            "/", "/meetings", "/meetings/",
+            "/analytics", "/analytics/",
+            "/actions", "/actions/",
+            "/team", "/team/",
+            "/calendar", "/calendar/",
+            "/settings", "/settings/",
+            "/boss", "/boss/",
+            "/app", "/app/",
+        }
+        relative = "index.html" if path in PAGE_ROUTES else path.lstrip("/")
         target = (STATIC / relative).resolve()
         if not target.is_relative_to(STATIC.resolve()) or not target.is_file():
             self.send_error(404)

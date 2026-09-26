@@ -439,6 +439,12 @@ class MeetingAnalysisTests(unittest.TestCase):
                 self.assertEqual(loaded["supabaseKey"], "sample_anon_key")
                 self.assertIn("postgres:secretpassword@db.supabase.co", loaded["databaseUrl"])
 
+    def test_page_routes_serve_index_html(self):
+        routes = ["/", "/meetings", "/analytics", "/actions", "/team", "/calendar", "/settings", "/boss", "/app"]
+        for route in routes:
+            self.assertIn(route, meetflow_app.PAGE_ROUTES)
+            self.assertIn(f"{route}/" if not route.endswith("/") else route, meetflow_app.PAGE_ROUTES)
+
 
 if __name__ == "__main__":
     unittest.main()
