@@ -75,8 +75,7 @@ def now() -> str:
 
 
 DB_CONFIG_FILE = DATA_DIR / "db_config.json"
-NEON_CONFIG_FILE = DATA_DIR / "neon_config.json"
-DATABASE_URL = os.environ.get("SUPABASE_DATABASE_URL", os.environ.get("NEON_DATABASE_URL", os.environ.get("DATABASE_URL", ""))).strip()
+DATABASE_URL = os.environ.get("SUPABASE_DATABASE_URL", os.environ.get("DATABASE_URL", "")).strip()
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "").strip()
 SUPABASE_KEY = os.environ.get("SUPABASE_ANON_KEY", os.environ.get("SUPABASE_KEY", "")).strip()
 
@@ -99,13 +98,6 @@ def load_db_config() -> dict:
                 cfg["supabaseKey"] = str(saved["supabaseKey"]).strip()
         except Exception:
             pass
-    elif NEON_CONFIG_FILE.exists():
-        try:
-            saved = json.loads(NEON_CONFIG_FILE.read_text(encoding="utf-8"))
-            if saved.get("databaseUrl"):
-                cfg["databaseUrl"] = str(saved["databaseUrl"]).strip()
-        except Exception:
-            pass
     DATABASE_URL = cfg["databaseUrl"]
     SUPABASE_URL = cfg["supabaseUrl"]
     SUPABASE_KEY = cfg["supabaseKey"]
@@ -124,29 +116,15 @@ def save_db_config(database_url: str = None, supabase_url: str = None, supabase_
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         payload = {"databaseUrl": DATABASE_URL, "supabaseUrl": SUPABASE_URL, "supabaseKey": SUPABASE_KEY}
         DB_CONFIG_FILE.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-        NEON_CONFIG_FILE.write_text(json.dumps({"databaseUrl": DATABASE_URL}, indent=2), encoding="utf-8")
     except Exception:
         pass
-
-
-def load_neon_url() -> str:
-    cfg = load_db_config()
-    return cfg.get("databaseUrl", "")
-
-
-def save_neon_url(url: str) -> None:
-    save_db_config(database_url=url)
 
 
 def get_db_provider_name() -> str:
     cfg = load_db_config()
     url = cfg.get("databaseUrl", "").lower()
     if url and HAVE_PSYCOPG2:
-        if "supabase" in url:
-            return "Supabase PostgreSQL"
-        elif "neon" in url:
-            return "Neon PostgreSQL"
-        return "PostgreSQL (Cloud)"
+        return "Supabase PostgreSQL"
     elif cfg.get("supabaseUrl"):
         return "Supabase GoTrue & REST"
     return "Local Database (SQLite)"
@@ -158,12 +136,18 @@ def get_db():
     if url and HAVE_PSYCOPG2:
         try:
             conn = psycopg2.connect(url, sslmode="require", connect_timeout=5)
-            provider = "supabase" if "supabase" in url.lower() else "neon" if "neon" in url.lower() else "postgres"
-            return conn, provider
+            return conn, "supabase"
         except Exception:
             pass
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    db_path = DATA_DIR / "meetflow_neon.db"
+    db_path = DATA_DIR / "meetflow_local.db"
+    if not db_path.exists():
+        old_path = DATA_DIR / "meetflow_neon.db"
+        if old_path.exists():
+            try:
+                old_path.rename(db_path)
+            except Exception:
+                db_path = old_path
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     return conn, "sqlite"
@@ -1692,8 +1676,7 @@ class Handler(BaseHTTPRequestHandler):
                 "configured": bool(ASSEMBLYAI_API_KEY),
                 "assistantConfigured": True,
                 "groqConfigured": bool(GROQ_API_KEY),
-                "neonConfigured": bool("neon" in url),
-                "supabaseConfigured": bool("supabase" in url or cfg.get("supabaseUrl")),
+                "supabaseConfigured": bool(url or cfg.get("supabaseUrl")),
                 "dbProvider": db_provider,
             })
         if path == "/api/auth/me":
@@ -1742,7 +1725,7 @@ class Handler(BaseHTTPRequestHandler):
                 if meeting and migrate_meeting_analysis(meeting):
                     write_meetings(meetings)
             return self.send_json(meeting or {"error": "Meeting not found."}, 200 if meeting else 404)
-        relative = "index.html" if path == "/" else path.lstrip("/")
+        relative = "index.html" if path in ("/", "/boss", "/boss/") else path.lstrip("/")
         target = (STATIC / relative).resolve()
         if not target.is_relative_to(STATIC.resolve()) or not target.is_file():
             self.send_error(404)

@@ -726,6 +726,14 @@ function switchView(view) {
 
   $("#detail-panel").hidden = !isMeetings || !state.activeId;
 
+  if (isBoss) {
+    if (window.location.pathname !== "/boss" && window.location.hash !== "#boss") {
+      try { history.pushState(null, "", "/boss"); } catch {}
+    }
+  } else if (window.location.pathname === "/boss") {
+    try { history.pushState(null, "", "/#app"); } catch {}
+  }
+
   if (isMeetings) {
     $("#page-title").textContent = "Your meetings.";
     $("#page-subtitle").textContent = "Recordings, notes, decisions, and actions in one place.";
@@ -758,13 +766,14 @@ function switchView(view) {
     renderCalendar();
   } else if (isSettings) {
     $("#page-title").textContent = "Settings & Database.";
-    $("#page-subtitle").textContent = "Configure Supabase and Neon PostgreSQL, view connection details, and manage profile.";
+    $("#page-subtitle").textContent = "Configure Supabase PostgreSQL, view connection details, and manage profile.";
     $("#crumb-page").textContent = "Settings & DB";
-    loadNeonSettings();
+    loadSupabaseSettings();
   }
 
   $$(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === view));
 }
+window.switchView = switchView;
 
 /* =========================================================
    Monthly Attendance Analytics & Chart
@@ -1265,24 +1274,19 @@ async function loadBossBanner() {
 }
 
 /* =========================================================
-   Settings, Supabase & Database Configuration
+   Settings & Supabase Database Configuration
    ========================================================= */
-async function loadNeonSettings() {
+async function loadSupabaseSettings() {
   try {
-    const res = await api("/api/settings/database");
-    state.neonStatus = res;
-    const badge = $("#settings-neon-status-badge");
-    const badgeText = $("#settings-neon-status-text");
+    const res = await api("/api/settings/supabase");
+    state.supabaseStatus = res;
+    const badge = $("#settings-supabase-status-badge") || $("#settings-neon-status-badge");
+    const badgeText = $("#settings-supabase-status-text") || $("#settings-neon-status-text");
     const providerVal = $("#settings-db-provider");
 
     if (badge && badgeText) {
       if (res.provider && res.provider.includes("Supabase")) {
         badgeText.textContent = "Connected to Supabase PostgreSQL";
-        badge.style.background = "#edf8f0";
-        badge.style.color = "#1d5b35";
-        badge.style.borderColor = "#b7dfc3";
-      } else if (res.provider && res.provider.includes("Neon")) {
-        badgeText.textContent = "Connected to Neon PostgreSQL";
         badge.style.background = "#edf8f0";
         badge.style.color = "#1d5b35";
         badge.style.borderColor = "#b7dfc3";
@@ -1295,7 +1299,7 @@ async function loadNeonSettings() {
     }
     if (providerVal) providerVal.textContent = res.provider || "Local Database";
 
-    const input = $("#neon-url-input");
+    const input = $("#supabase-db-url-input") || $("#neon-url-input");
     if (input && res.databaseUrl) input.value = res.databaseUrl;
     const sbUrlInput = $("#supabase-url-input");
     if (sbUrlInput && res.supabaseUrl) sbUrlInput.value = res.supabaseUrl;
@@ -1303,22 +1307,27 @@ async function loadNeonSettings() {
     showToast(err.message);
   }
 }
+const loadNeonSettings = loadSupabaseSettings;
 
-async function saveNeonSettings(e) {
+async function saveSupabaseSettings(e) {
   if (e) e.preventDefault();
-  const input = $("#neon-url-input");
+  const input = $("#supabase-db-url-input") || $("#neon-url-input");
   const databaseUrl = input ? input.value.trim() : "";
   const sbUrlInput = $("#supabase-url-input");
   const supabaseUrl = sbUrlInput ? sbUrlInput.value.trim() : "";
   const sbKeyInput = $("#supabase-key-input");
   const supabaseKey = sbKeyInput ? sbKeyInput.value.trim() : "";
-  const testResult = $("#neon-test-result");
-  const saveBtn = $("#save-neon-btn");
+  const testResult = $("#supabase-test-result") || $("#neon-test-result");
+  const saveBtn = $("#save-supabase-btn") || $("#save-neon-btn");
 
-  saveBtn.disabled = true;
-  saveBtn.textContent = "Saving Database Settings…";
-  testResult.className = "db-test-result";
-  testResult.style.display = "none";
+  if (saveBtn) {
+    saveBtn.disabled = true;
+    saveBtn.textContent = "Connecting to Supabase…";
+  }
+  if (testResult) {
+    testResult.className = "db-test-result";
+    testResult.style.display = "none";
+  }
 
   try {
     const res = await api("/api/settings/supabase", {
@@ -1326,21 +1335,28 @@ async function saveNeonSettings(e) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ databaseUrl, supabaseUrl, supabaseKey }),
     });
-    testResult.className = "db-test-result success";
-    testResult.textContent = res.message;
-    testResult.style.display = "block";
-    showToast("Database & Supabase configured successfully!");
-    await loadNeonSettings();
+    if (testResult) {
+      testResult.className = "db-test-result success";
+      testResult.textContent = res.message;
+      testResult.style.display = "block";
+    }
+    showToast("Connected to Supabase PostgreSQL!");
+    await loadSupabaseSettings();
     await loadProviderStatus();
   } catch (err) {
-    testResult.className = "db-test-result error";
-    testResult.textContent = err.message;
-    testResult.style.display = "block";
+    if (testResult) {
+      testResult.className = "db-test-result error";
+      testResult.textContent = err.message;
+      testResult.style.display = "block";
+    }
   } finally {
-    saveBtn.disabled = false;
-    saveBtn.textContent = "Save Database & Supabase Settings";
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.textContent = "Save & Connect Supabase";
+    }
   }
 }
+const saveNeonSettings = saveSupabaseSettings;
 
 /* =========================================================
    Authentication & Employee Profile
@@ -1657,11 +1673,19 @@ $("#cal-today-btn")?.addEventListener("click", () => {
   renderCalendar();
 });
 
-// Neon DB settings controls
-$("#neon-config-form")?.addEventListener("submit", saveNeonSettings);
-$("#test-neon-btn")?.addEventListener("click", saveNeonSettings);
+// Supabase DB settings controls
+$("#supabase-config-form")?.addEventListener("submit", saveSupabaseSettings);
+$("#neon-config-form")?.addEventListener("submit", saveSupabaseSettings);
+$("#save-supabase-btn")?.addEventListener("click", saveSupabaseSettings);
+$("#test-supabase-btn")?.addEventListener("click", saveSupabaseSettings);
+$("#save-neon-btn")?.addEventListener("click", saveSupabaseSettings);
+$("#test-neon-btn")?.addEventListener("click", saveSupabaseSettings);
+$("#toggle-supabase-db-visibility")?.addEventListener("click", () => {
+  const inp = $("#supabase-db-url-input") || $("#neon-url-input");
+  if (inp) inp.type = inp.type === "password" ? "text" : "password";
+});
 $("#toggle-neon-visibility")?.addEventListener("click", () => {
-  const inp = $("#neon-url-input");
+  const inp = $("#neon-url-input") || $("#supabase-db-url-input");
   if (inp) inp.type = inp.type === "password" ? "text" : "password";
 });
 $("#topbar-db-pill")?.addEventListener("click", () => switchView("settings"));
@@ -1692,11 +1716,28 @@ $("#switch-account-btn")?.addEventListener("click", () => openAuthDialog("signin
 $("#boss-schedule-form")?.addEventListener("submit", handleBossScheduleSubmit);
 $("#generate-meet-link-btn")?.addEventListener("click", generateRandomMeetLink);
 
+// Check direct /boss or #boss entry
+function checkInitialRoute() {
+  const path = window.location.pathname.toLowerCase();
+  const hash = window.location.hash.toLowerCase();
+  if (path === "/boss" || path.startsWith("/boss/") || hash === "#boss") {
+    const landing = document.querySelector("#landing-page");
+    const appShell = document.querySelector(".app-shell");
+    if (landing) landing.hidden = true;
+    if (appShell) appShell.hidden = false;
+    document.body.classList.remove("landing-mode");
+    switchView("boss");
+  }
+}
+
 // App Initialization
 initAuth().catch(console.error);
 loadMeetings().catch((error) => showToast(error.message));
 loadProviderStatus().catch((error) => showToast(error.message));
 loadBossBanner().catch(console.error);
 setDefaultMeetingDate();
+checkInitialRoute();
+window.addEventListener("popstate", checkInitialRoute);
+window.addEventListener("hashchange", checkInitialRoute);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) checkDeadlineReminders(); });
 setInterval(() => checkDeadlineReminders().catch((error) => showToast(error.message)), 60000);

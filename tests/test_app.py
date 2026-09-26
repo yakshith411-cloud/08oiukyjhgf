@@ -427,8 +427,7 @@ class MeetingAnalysisTests(unittest.TestCase):
         with TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
             cfg_file = temp_path / "db_config.json"
-            neon_file = temp_path / "neon_config.json"
-            with patch("app.DATA_DIR", temp_path), patch("app.DB_CONFIG_FILE", cfg_file), patch("app.NEON_CONFIG_FILE", neon_file):
+            with patch("app.DATA_DIR", temp_path), patch("app.DB_CONFIG_FILE", cfg_file):
                 # Test save Supabase config
                 meetflow_app.save_db_config(
                     database_url="postgresql://postgres:secretpassword@db.supabase.co:5432/postgres",

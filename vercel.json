@@ -4,6 +4,14 @@
     {
       "source": "/api/(.*)",
       "destination": "/api/index.py"
+    },
+    {
+      "source": "/boss",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/boss/(.*)",
+      "destination": "/index.html"
     }
   ]
 }

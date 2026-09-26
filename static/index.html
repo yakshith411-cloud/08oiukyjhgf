@@ -344,36 +344,36 @@
               <div class="section-heading">
                 <div>
                   <div class="eyebrow muted-eyebrow">INFRASTRUCTURE & CONFIGURATION</div>
-                  <h2>Settings, Supabase & Database</h2>
+                  <h2>Settings & Supabase Cloud Database</h2>
                 </div>
               </div>
 
               <div class="settings-grid">
-                <article class="settings-card neon-card">
+                <article class="settings-card supabase-card neon-card">
                   <div class="settings-card-head">
-                    <div class="neon-badge-pill" id="settings-neon-status-badge">
+                    <div class="supabase-badge-pill neon-badge-pill" id="settings-supabase-status-badge">
                       <span class="status-dot"></span>
-                      <span id="settings-neon-status-text">Checking Database…</span>
+                      <span id="settings-supabase-status-text">Checking Database…</span>
                     </div>
-                    <h3>Database & Auth (Supabase & Neon)</h3>
+                    <h3>Supabase Cloud Database & Auth</h3>
                   </div>
                   <p class="settings-copy">
-                    Meetflow connects to <strong>Supabase</strong> or <strong>Neon PostgreSQL</strong> to store employee profiles, authentication credentials, monthly attendance graphs, and boss meeting schedules. When unconfigured, it safely falls back to local SQLite.
+                    Meetflow connects directly to <strong>Supabase PostgreSQL</strong> to store employee profiles, authentication sessions, monthly attendance graphs, and boss meeting schedules. When unconfigured, it safely falls back to local SQLite.
                   </p>
-                  <form id="neon-config-form" class="settings-form">
+                  <form id="supabase-config-form" class="settings-form">
                     <div class="form-group" style="margin-bottom:12px;">
-                      <label class="field-label" for="neon-url-input">POSTGRESQL DATABASE URL (SUPABASE POOLER / NEON URI)</label>
-                      <div class="neon-input-wrap">
-                        <input class="dialog-input" id="neon-url-input" type="password" placeholder="postgresql://postgres:[password]@db.[ref].supabase.co:5432/postgres" autocomplete="off">
-                        <button class="button button-outline" id="toggle-neon-visibility" type="button" title="Show/Hide">👁</button>
+                      <label class="field-label" for="supabase-db-url-input">SUPABASE DATABASE URL (POSTGRESQL CONNECTION STRING)</label>
+                      <div class="supabase-input-wrap neon-input-wrap">
+                        <input class="dialog-input" id="supabase-db-url-input" type="password" placeholder="postgresql://postgres:[password]@db.[ref].supabase.co:5432/postgres" autocomplete="off">
+                        <button class="button button-outline" id="toggle-supabase-db-visibility" type="button" title="Show/Hide">👁</button>
                       </div>
-                      <small class="field-hint" style="color:var(--ink-muted); font-size:11px; margin-top:3px; display:block;">Supabase connection string (Port 5432 or Pooler 6543) or Neon DB URL.</small>
+                      <small class="field-hint" style="color:var(--ink-muted); font-size:11px; margin-top:3px; display:block;">Supabase PostgreSQL URI (Port 5432 or Transaction pooler port 6543).</small>
                     </div>
 
                     <div class="form-row-2" style="margin-bottom:14px;">
                       <div class="form-group">
                         <label class="field-label" for="supabase-url-input">SUPABASE PROJECT URL</label>
-                        <input class="dialog-input" id="supabase-url-input" type="text" placeholder="https://xyzcompany.supabase.co" autocomplete="off">
+                        <input class="dialog-input" id="supabase-url-input" type="text" placeholder="https://[project-ref].supabase.co" autocomplete="off">
                       </div>
                       <div class="form-group">
                         <label class="field-label" for="supabase-key-input">SUPABASE ANON / PUBLIC KEY</label>
@@ -382,17 +382,19 @@
                     </div>
 
                     <div class="settings-actions">
-                      <button class="button button-dark" id="save-neon-btn" type="submit">Save Database & Supabase Settings</button>
-                      <button class="button button-outline" id="test-neon-btn" type="button">Test Connection</button>
+                      <button class="button button-dark" id="save-supabase-btn" type="submit">Save & Connect Supabase</button>
+                      <button class="button button-outline" id="test-supabase-btn" type="button">Test Connection</button>
                     </div>
-                    <div class="db-test-result" id="neon-test-result" role="status"></div>
+                    <div class="db-test-result" id="supabase-test-result" role="status"></div>
                   </form>
-                  <div class="neon-guide">
-                    <b>Setup Instructions:</b>
+                  <div class="supabase-guide neon-guide">
+                    <b>Step-by-Step Supabase Setup:</b>
                     <ol>
-                      <li><strong>Supabase:</strong> Go to <a href="https://supabase.com" target="_blank" rel="noopener noreferrer">supabase.com ↗</a> &gt; Project Settings &gt; Database &gt; Connection String (URI).</li>
-                      <li><strong>Neon DB:</strong> Go to <a href="https://neon.tech" target="_blank" rel="noopener noreferrer">neon.tech ↗</a> &gt; Dashboard &gt; Connection Details &gt; Postgres URI.</li>
-                      <li>Paste the connection string above and click <em>Save Database & Supabase Settings</em>.</li>
+                      <li>Go to <a href="https://supabase.com" target="_blank" rel="noopener noreferrer">supabase.com ↗</a> and sign in or create a free account.</li>
+                      <li>Click <strong>New Project</strong> and choose a project name, database password, and your nearest region.</li>
+                      <li>Go to <strong>Project Settings &gt; Database</strong> and copy the <strong>Connection string (URI)</strong>. Replace <code>[YOUR-PASSWORD]</code> with your actual password and paste it above.</li>
+                      <li>Go to <strong>Project Settings &gt; API</strong> and copy the <strong>Project URL</strong> and <strong>anon / public key</strong> into the fields above.</li>
+                      <li>Click <strong>Save & Connect Supabase</strong>. Meetflow connects immediately and auto-creates all tables!</li>
                     </ol>
                   </div>
                 </article>

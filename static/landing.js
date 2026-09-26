@@ -1,15 +1,31 @@
 const landingPage = document.querySelector("#landing-page");
 const appShell = document.querySelector(".app-shell");
 
+function isBossRoute() {
+  const path = window.location.pathname.toLowerCase();
+  const hash = window.location.hash.toLowerCase();
+  return path === "/boss" || path.startsWith("/boss/") || hash === "#boss";
+}
+
 function syncView() {
-  const showApp = window.location.hash === "#app";
+  const isBoss = isBossRoute();
+  const showApp = window.location.hash === "#app" || isBoss;
   landingPage.hidden = showApp;
   appShell.hidden = !showApp;
   document.body.classList.toggle("landing-mode", !showApp);
-  document.title = showApp ? "Meetflow — Meeting intelligence, in motion" : "Meetflow — Meetings end. Momentum doesn't.";
+  document.title = isBoss
+    ? "Meetflow Boss Portal — Executive Meeting Broadcast"
+    : showApp
+    ? "Meetflow — Meeting intelligence, in motion"
+    : "Meetflow — Meetings end. Momentum doesn't.";
+
+  if (isBoss && typeof window.switchView === "function") {
+    window.switchView("boss");
+  }
 }
 
 window.addEventListener("hashchange", syncView);
+window.addEventListener("popstate", syncView);
 syncView();
 
 async function renderLiquidChrome() {

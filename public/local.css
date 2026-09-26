@@ -1509,6 +1509,7 @@ body {
   color: #1a2c22;
 }
 
+.supabase-badge-pill,
 .neon-badge-pill {
   display: inline-flex;
   align-items: center;
@@ -1534,11 +1535,13 @@ body {
   gap: 12px;
 }
 
+.supabase-input-wrap,
 .neon-input-wrap {
   display: flex;
   gap: 6px;
 }
 
+.supabase-input-wrap input,
 .neon-input-wrap input {
   flex: 1;
 }
@@ -1571,6 +1574,7 @@ body {
   border: 1px solid #f2c7c5;
 }
 
+.supabase-guide,
 .neon-guide {
   margin-top: 20px;
   padding-top: 16px;
@@ -1579,16 +1583,19 @@ body {
   color: #6a7c70;
 }
 
+.supabase-guide b,
 .neon-guide b {
   color: #1a2c22;
 }
 
+.supabase-guide ol,
 .neon-guide ol {
   margin: 8px 0 0;
   padding-left: 18px;
   line-height: 1.6;
 }
 
+.supabase-guide a,
 .neon-guide a {
   color: #245e43;
   font-weight: 600;
