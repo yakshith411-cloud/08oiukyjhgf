@@ -20,6 +20,8 @@ const state = {
   teamMembers: [],
   calendarDate: new Date(),
   neonStatus: null,
+  bossMeetings: [],
+  upcomingBossMeeting: null,
 };
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -483,18 +485,19 @@ async function loadProviderStatus() {
   $("#provider-status").classList.toggle("connected", status.configured);
   $("#provider-status").title = status.configured ? "AssemblyAI configured on the server" : "AssemblyAI key is not configured on the server";
 
+  const isSupabase = status.supabaseConfigured;
   const isNeon = status.neonConfigured;
-  const dbText = isNeon ? "Neon PostgreSQL" : "Local Database";
+  const dbText = status.dbProvider || (isSupabase ? "Supabase PostgreSQL" : isNeon ? "Neon PostgreSQL" : "Local Database");
   const dbPill = $("#topbar-db-pill");
   if (dbPill) {
     dbPill.classList.toggle("connected", true);
     $("#topbar-db-label").textContent = dbText;
-    dbPill.title = isNeon ? "Connected to Neon Serverless PostgreSQL" : "Using local SQLite database fallback (Neon not configured)";
+    dbPill.title = `Database Provider: ${dbText}`;
   }
   const sideDbTitle = $("#sidebar-db-title");
-  if (sideDbTitle) sideDbTitle.textContent = isNeon ? "Neon PostgreSQL" : "Local Database";
+  if (sideDbTitle) sideDbTitle.textContent = dbText;
   const sideDbSub = $("#sidebar-db-sub");
-  if (sideDbSub) sideDbSub.textContent = isNeon ? "Serverless Cloud" : "SQLite fallback";
+  if (sideDbSub) sideDbSub.textContent = isSupabase ? "Supabase Cloud" : isNeon ? "Neon Serverless" : "SQLite fallback";
   const sideDbBlock = $("#sidebar-db-status");
   if (sideDbBlock) sideDbBlock.querySelector(".status-dot")?.classList.toggle("connected", true);
 }
@@ -700,6 +703,7 @@ function renderAllActions() {
 function switchView(view) {
   state.view = view;
   const isMeetings = view === "meetings";
+  const isBoss = view === "boss";
   const isActions = view === "actions";
   const isAnalytics = view === "analytics";
   const isTeam = view === "team";
@@ -709,6 +713,8 @@ function switchView(view) {
   $("#meetings-view").hidden = !isMeetings;
   $("#actions-view").hidden = !isActions;
   $("#upload-panel").hidden = !isMeetings;
+  const bossView = $("#boss-view");
+  if (bossView) bossView.hidden = !isBoss;
   const analyticsView = $("#analytics-view");
   if (analyticsView) analyticsView.hidden = !isAnalytics;
   const teamView = $("#team-view");
@@ -724,6 +730,12 @@ function switchView(view) {
     $("#page-title").textContent = "Your meetings.";
     $("#page-subtitle").textContent = "Recordings, notes, decisions, and actions in one place.";
     $("#crumb-page").textContent = "Meetings";
+    loadBossBanner();
+  } else if (isBoss) {
+    $("#page-title").textContent = "Executive Portal & Meet Links.";
+    $("#page-subtitle").textContent = "Schedule company meetings, generate Google Meet links, and broadcast agendas to employees.";
+    $("#crumb-page").textContent = "Boss Portal";
+    loadBossMeetings();
   } else if (isActions) {
     $("#page-title").textContent = "Your open actions.";
     $("#page-subtitle").textContent = "Follow-ups and deadlines from your saved meetings.";
@@ -746,7 +758,7 @@ function switchView(view) {
     renderCalendar();
   } else if (isSettings) {
     $("#page-title").textContent = "Settings & Database.";
-    $("#page-subtitle").textContent = "Configure Neon serverless PostgreSQL, view connection details, and manage profile.";
+    $("#page-subtitle").textContent = "Configure Supabase and Neon PostgreSQL, view connection details, and manage profile.";
     $("#crumb-page").textContent = "Settings & DB";
     loadNeonSettings();
   }
@@ -984,9 +996,13 @@ function renderCalendar() {
     const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 
     const dayMeetings = state.meetings.filter((m) => m.createdAt && m.createdAt.startsWith(dateStr));
+    const dayBossMeetings = (state.bossMeetings || []).filter((bm) => bm.scheduled_at && bm.scheduled_at.startsWith(dateStr));
     const dayTasks = state.meetings.flatMap((m) => (m.tasks || []).map((t) => ({ ...t, meetingId: m.id }))).filter((t) => t.due_date === dateStr);
 
     let pillsHtml = "";
+    dayBossMeetings.forEach((bm) => {
+      pillsHtml += `<div class="calendar-event-pill boss-event" data-meet-link="${escapeHtml(bm.meet_link)}" style="background:#eef6f1; border-color:#245e43; color:#184c34; font-weight:600;" title="Executive Meet: ${escapeHtml(bm.title)}">👑 ${escapeHtml(bm.title)}</div>`;
+    });
     dayMeetings.forEach((m) => {
       pillsHtml += `<div class="calendar-event-pill" data-meeting-id="${escapeHtml(m.id)}" title="${escapeHtml(m.title)}">${escapeHtml(m.title)}</div>`;
     });
@@ -994,7 +1010,7 @@ function renderCalendar() {
       pillsHtml += `<div class="calendar-event-pill sample-event" data-meeting-id="${escapeHtml(t.meetingId)}" title="Due: ${escapeHtml(t.title)}">✓ ${escapeHtml(t.title)}</div>`;
     });
 
-    if (!dayMeetings.length && !dayTasks.length && (d === 8 || d === 15 || d === 22)) {
+    if (!dayMeetings.length && !dayBossMeetings.length && !dayTasks.length && (d === 8 || d === 15 || d === 22)) {
       pillsHtml += `<div class="calendar-event-pill sample-event">Team Sync (10:00 AM)</div>`;
     }
 
@@ -1020,21 +1036,252 @@ function renderCalendar() {
       openMeeting(pill.dataset.meetingId);
     });
   });
+  grid.querySelectorAll(".calendar-event-pill[data-meet-link]").forEach((pill) => {
+    pill.addEventListener("click", () => {
+      window.open(pill.dataset.meetLink, "_blank", "noopener,noreferrer");
+    });
+  });
 }
 
 /* =========================================================
-   Settings & Neon DB Configuration
+   Boss / Executive Portal & Google Meet Scheduling
+   ========================================================= */
+async function loadBossMeetings() {
+  try {
+    const meetings = await api("/api/boss/meetings");
+    state.bossMeetings = meetings;
+    renderBossMeetings(meetings);
+  } catch (err) {
+    showToast(err.message);
+  }
+}
+
+function renderBossMeetings(meetings = []) {
+  const countEl = $("#boss-meetings-count");
+  if (countEl) countEl.textContent = meetings.length;
+  const listEl = $("#boss-meetings-list");
+  if (!listEl) return;
+
+  if (!meetings.length) {
+    listEl.innerHTML = `
+      <div class="empty-state" style="padding:28px 16px; text-align:center;">
+        <span style="font-size:24px; display:block; margin-bottom:6px;">👑</span>
+        <b>No meetings scheduled yet.</b>
+        <span style="font-size:12px; color:#728277; display:block; margin-top:4px;">Use the broadcast form on the left to schedule your first meeting and post a Google Meet link.</span>
+      </div>
+    `;
+    return;
+  }
+
+  listEl.innerHTML = meetings.map((m) => {
+    let dateStr = m.scheduled_at;
+    try {
+      const d = new Date(m.scheduled_at);
+      dateStr = new Intl.DateTimeFormat(undefined, {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit"
+      }).format(d);
+    } catch {}
+
+    const isCompleted = m.status === "completed";
+    const statusClass = isCompleted ? "status-badge-completed" : "status-badge-scheduled";
+    const statusLabel = isCompleted ? "Completed" : "Scheduled";
+
+    return `
+      <div class="scheduled-meet-item" data-id="${escapeHtml(m.id)}">
+        <div class="scheduled-meet-head">
+          <div>
+            <div class="scheduled-meet-title">${escapeHtml(m.title)}</div>
+            <div class="scheduled-meet-time">
+              <span>📅 ${dateStr}</span>
+              <span>·</span>
+              <span>⏱ ${m.duration_minutes || 45} mins</span>
+            </div>
+          </div>
+          <div class="scheduled-meet-badges">
+            <span class="dept-badge">${escapeHtml(m.department || "All Departments")}</span>
+            <span class="${statusClass}">${statusLabel}</span>
+          </div>
+        </div>
+
+        ${m.agenda ? `<div class="scheduled-meet-agenda">${escapeHtml(m.agenda)}</div>` : ""}
+
+        <div class="scheduled-meet-footer">
+          <a class="meet-link-btn" href="${escapeHtml(m.meet_link)}" target="_blank" rel="noopener noreferrer">
+            <span class="meet-icon-dot"></span>
+            <span>Join Google Meet ↗</span>
+          </a>
+
+          <div class="meet-item-actions">
+            <button class="button button-outline copy-link-btn" data-link="${escapeHtml(m.meet_link)}" style="height:30px; font-size:11px; padding:0 10px;" type="button">Copy Link</button>
+            ${!isCompleted ? `<button class="button button-outline complete-meeting-btn" data-id="${escapeHtml(m.id)}" style="height:30px; font-size:11px; padding:0 10px;" type="button">✓ Complete</button>` : ""}
+            <button class="action-remove delete-meeting-btn" data-id="${escapeHtml(m.id)}" title="Delete meeting" type="button">✕</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  listEl.querySelectorAll(".copy-link-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      navigator.clipboard.writeText(btn.dataset.link);
+      showToast("Google Meet link copied to clipboard!");
+    });
+  });
+
+  listEl.querySelectorAll(".complete-meeting-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      try {
+        await api(`/api/boss/meetings/${btn.dataset.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "completed" })
+        });
+        showToast("Meeting marked as completed.");
+        await loadBossMeetings();
+        await loadBossBanner();
+      } catch (err) {
+        showToast(err.message);
+      }
+    });
+  });
+
+  listEl.querySelectorAll(".delete-meeting-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (!confirm("Are you sure you want to remove this scheduled meeting?")) return;
+      try {
+        await api(`/api/boss/meetings/${btn.dataset.id}`, { method: "DELETE" });
+        showToast("Scheduled meeting removed.");
+        await loadBossMeetings();
+        await loadBossBanner();
+      } catch (err) {
+        showToast(err.message);
+      }
+    });
+  });
+}
+
+async function handleBossScheduleSubmit(e) {
+  e.preventDefault();
+  const title = $("#boss-meeting-title").value.trim();
+  const dateInput = $("#boss-meeting-date").value;
+  const duration = parseInt($("#boss-meeting-duration").value, 10) || 45;
+  const dept = $("#boss-meeting-dept").value;
+  const meetLink = $("#boss-meet-link").value.trim();
+  const agenda = $("#boss-meeting-agenda").value.trim();
+  const submitBtn = $("#boss-submit-btn");
+
+  if (!title) return showToast("Please enter a meeting title.");
+  if (!dateInput) return showToast("Please select a date and time.");
+  if (!meetLink) return showToast("Please enter or generate a Google Meet link.");
+
+  submitBtn.disabled = true;
+  submitBtn.textContent = "Broadcasting meeting…";
+
+  try {
+    const scheduledAt = new Date(dateInput).toISOString();
+    await api("/api/boss/meetings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title,
+        scheduled_at: scheduledAt,
+        duration_minutes: duration,
+        department: dept,
+        meet_link: meetLink,
+        agenda
+      })
+    });
+    showToast("Meeting scheduled and Google Meet link broadcast!");
+    $("#boss-schedule-form").reset();
+    setDefaultMeetingDate();
+    await loadBossMeetings();
+    await loadBossBanner();
+  } catch (err) {
+    showToast(err.message);
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.innerHTML = "<span>Broadcast & Post Meeting</span> ↗";
+  }
+}
+
+function generateRandomMeetLink() {
+  const chars = "abcdefghijklmnopqrstuvwxyz";
+  const r = (n) => Array.from({ length: n }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+  const code = `${r(3)}-${r(4)}-${r(3)}`;
+  const link = `https://meet.google.com/${code}`;
+  const input = $("#boss-meet-link");
+  if (input) {
+    input.value = link;
+    showToast(`Google Meet link generated: ${code}`);
+  }
+  return link;
+}
+
+function setDefaultMeetingDate() {
+  const dateInput = $("#boss-meeting-date");
+  if (dateInput && !dateInput.value) {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    d.setHours(10, 0, 0, 0);
+    const pad = (n) => String(n).padStart(2, "0");
+    dateInput.value = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+}
+
+async function loadBossBanner() {
+  const banner = $("#boss-live-banner");
+  if (!banner) return;
+  try {
+    const res = await api("/api/boss/upcoming");
+    const meet = res.upcoming;
+    state.upcomingBossMeeting = meet;
+    if (meet) {
+      banner.hidden = false;
+      let dateFormatted = meet.scheduled_at;
+      try {
+        const d = new Date(meet.scheduled_at);
+        dateFormatted = new Intl.DateTimeFormat(undefined, {
+          weekday: "short",
+          month: "short",
+          day: "numeric",
+          hour: "numeric",
+          minute: "2-digit"
+        }).format(d);
+      } catch {}
+      $("#banner-meeting-title").textContent = meet.title;
+      $("#banner-meeting-meta").textContent = `${dateFormatted} (${meet.duration_minutes || 45} mins) · ${meet.department || "Company-wide"}`;
+      const btn = $("#banner-meet-btn");
+      if (btn) btn.href = meet.meet_link;
+    } else {
+      banner.hidden = true;
+    }
+  } catch {
+    banner.hidden = true;
+  }
+}
+
+/* =========================================================
+   Settings, Supabase & Database Configuration
    ========================================================= */
 async function loadNeonSettings() {
   try {
-    const res = await api("/api/settings/neon");
+    const res = await api("/api/settings/database");
     state.neonStatus = res;
     const badge = $("#settings-neon-status-badge");
     const badgeText = $("#settings-neon-status-text");
     const providerVal = $("#settings-db-provider");
 
     if (badge && badgeText) {
-      if (res.neonConfigured) {
+      if (res.provider && res.provider.includes("Supabase")) {
+        badgeText.textContent = "Connected to Supabase PostgreSQL";
+        badge.style.background = "#edf8f0";
+        badge.style.color = "#1d5b35";
+        badge.style.borderColor = "#b7dfc3";
+      } else if (res.provider && res.provider.includes("Neon")) {
         badgeText.textContent = "Connected to Neon PostgreSQL";
         badge.style.background = "#edf8f0";
         badge.style.color = "#1d5b35";
@@ -1046,12 +1293,12 @@ async function loadNeonSettings() {
         badge.style.borderColor = "#c9d8cc";
       }
     }
-    if (providerVal) providerVal.textContent = res.dbProvider;
+    if (providerVal) providerVal.textContent = res.provider || "Local Database";
 
     const input = $("#neon-url-input");
-    if (input && res.databaseUrl) {
-      input.value = res.databaseUrl;
-    }
+    if (input && res.databaseUrl) input.value = res.databaseUrl;
+    const sbUrlInput = $("#supabase-url-input");
+    if (sbUrlInput && res.supabaseUrl) sbUrlInput.value = res.supabaseUrl;
   } catch (err) {
     showToast(err.message);
   }
@@ -1060,25 +1307,29 @@ async function loadNeonSettings() {
 async function saveNeonSettings(e) {
   if (e) e.preventDefault();
   const input = $("#neon-url-input");
-  const databaseUrl = input.value.trim();
+  const databaseUrl = input ? input.value.trim() : "";
+  const sbUrlInput = $("#supabase-url-input");
+  const supabaseUrl = sbUrlInput ? sbUrlInput.value.trim() : "";
+  const sbKeyInput = $("#supabase-key-input");
+  const supabaseKey = sbKeyInput ? sbKeyInput.value.trim() : "";
   const testResult = $("#neon-test-result");
   const saveBtn = $("#save-neon-btn");
 
   saveBtn.disabled = true;
-  saveBtn.textContent = "Connecting to Neon…";
+  saveBtn.textContent = "Saving Database Settings…";
   testResult.className = "db-test-result";
   testResult.style.display = "none";
 
   try {
-    const res = await api("/api/settings/neon", {
+    const res = await api("/api/settings/supabase", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ databaseUrl }),
+      body: JSON.stringify({ databaseUrl, supabaseUrl, supabaseKey }),
     });
     testResult.className = "db-test-result success";
     testResult.textContent = res.message;
     testResult.style.display = "block";
-    showToast("Database configured successfully!");
+    showToast("Database & Supabase configured successfully!");
     await loadNeonSettings();
     await loadProviderStatus();
   } catch (err) {
@@ -1087,7 +1338,7 @@ async function saveNeonSettings(e) {
     testResult.style.display = "block";
   } finally {
     saveBtn.disabled = false;
-    saveBtn.textContent = "Save & Connect to Neon";
+    saveBtn.textContent = "Save Database & Supabase Settings";
   }
 }
 
@@ -1437,9 +1688,15 @@ $("#register-form")?.addEventListener("submit", handleRegister);
 $("#logout-btn")?.addEventListener("click", handleLogout);
 $("#switch-account-btn")?.addEventListener("click", () => openAuthDialog("signin"));
 
+// Boss Portal controls
+$("#boss-schedule-form")?.addEventListener("submit", handleBossScheduleSubmit);
+$("#generate-meet-link-btn")?.addEventListener("click", generateRandomMeetLink);
+
 // App Initialization
 initAuth().catch(console.error);
 loadMeetings().catch((error) => showToast(error.message));
 loadProviderStatus().catch((error) => showToast(error.message));
+loadBossBanner().catch(console.error);
+setDefaultMeetingDate();
 document.addEventListener("visibilitychange", () => { if (!document.hidden) checkDeadlineReminders(); });
 setInterval(() => checkDeadlineReminders().catch((error) => showToast(error.message)), 60000);

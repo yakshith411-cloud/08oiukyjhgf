@@ -376,5 +376,70 @@ class MeetingAnalysisTests(unittest.TestCase):
                 self.assertTrue(len(analytics["recentMeetings"]) > 0)
 
 
+    def test_boss_meetings_scheduling_and_crud(self):
+        with TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            with patch("app.DATA_DIR", temp_path):
+                meetflow_app.init_db()
+
+                # Test format_meet_link
+                link1 = meetflow_app.format_meet_link("abc-defg-hij")
+                self.assertEqual(link1, "https://meet.google.com/abc-defg-hij")
+                link2 = meetflow_app.format_meet_link("https://meet.google.com/xyz-uvwx-rst")
+                self.assertEqual(link2, "https://meet.google.com/xyz-uvwx-rst")
+
+                # Verify auto-seeded meetings exist
+                all_meetings = meetflow_app.get_all_scheduled_meetings()
+                self.assertGreaterEqual(len(all_meetings), 2)
+
+                # Test creating scheduled meeting
+                created = meetflow_app.create_scheduled_meeting(
+                    title="Executive Strategy Review",
+                    scheduled_at="2026-10-15T10:00:00Z",
+                    duration_minutes=45,
+                    meet_link="https://meet.google.com/test-meet-123",
+                    agenda="• Key roadmap goals\n• Supabase auth & PostgreSQL integration",
+                    department="Engineering & Executive",
+                    created_by="Alex Morgan (Boss)"
+                )
+                self.assertTrue(created["id"].startswith("sched_"))
+                self.assertEqual(created["title"], "Executive Strategy Review")
+                self.assertEqual(created["meet_link"], "https://meet.google.com/test-meet-123")
+
+                # Test get upcoming meeting
+                upcoming = meetflow_app.get_next_upcoming_meeting()
+                self.assertIsNotNone(upcoming)
+                self.assertIn("meet_link", upcoming)
+
+                # Test update meeting
+                updated = meetflow_app.update_scheduled_meeting(created["id"], {"status": "completed", "duration_minutes": 60})
+                self.assertIsNotNone(updated)
+                self.assertEqual(updated["status"], "completed")
+                self.assertEqual(updated["duration_minutes"], 60)
+
+                # Test delete meeting
+                deleted = meetflow_app.delete_scheduled_meeting(created["id"])
+                self.assertTrue(deleted)
+                remaining = meetflow_app.get_all_scheduled_meetings()
+                self.assertFalse(any(m["id"] == created["id"] for m in remaining))
+
+    def test_supabase_db_config(self):
+        with TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            cfg_file = temp_path / "db_config.json"
+            neon_file = temp_path / "neon_config.json"
+            with patch("app.DATA_DIR", temp_path), patch("app.DB_CONFIG_FILE", cfg_file), patch("app.NEON_CONFIG_FILE", neon_file):
+                # Test save Supabase config
+                meetflow_app.save_db_config(
+                    database_url="postgresql://postgres:secretpassword@db.supabase.co:5432/postgres",
+                    supabase_url="https://xyzproject.supabase.co",
+                    supabase_key="sample_anon_key"
+                )
+                loaded = meetflow_app.load_db_config()
+                self.assertEqual(loaded["supabaseUrl"], "https://xyzproject.supabase.co")
+                self.assertEqual(loaded["supabaseKey"], "sample_anon_key")
+                self.assertIn("postgres:secretpassword@db.supabase.co", loaded["databaseUrl"])
+
+
 if __name__ == "__main__":
     unittest.main()

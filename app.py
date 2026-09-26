@@ -74,38 +74,92 @@ def now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+DB_CONFIG_FILE = DATA_DIR / "db_config.json"
 NEON_CONFIG_FILE = DATA_DIR / "neon_config.json"
-NEON_DATABASE_URL = os.environ.get("NEON_DATABASE_URL", os.environ.get("DATABASE_URL", "")).strip()
+DATABASE_URL = os.environ.get("SUPABASE_DATABASE_URL", os.environ.get("NEON_DATABASE_URL", os.environ.get("DATABASE_URL", ""))).strip()
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "").strip()
+SUPABASE_KEY = os.environ.get("SUPABASE_ANON_KEY", os.environ.get("SUPABASE_KEY", "")).strip()
 
 
-def load_neon_url() -> str:
-    global NEON_DATABASE_URL
-    if NEON_CONFIG_FILE.exists():
+def load_db_config() -> dict:
+    global DATABASE_URL, SUPABASE_URL, SUPABASE_KEY
+    cfg = {
+        "databaseUrl": DATABASE_URL,
+        "supabaseUrl": SUPABASE_URL,
+        "supabaseKey": SUPABASE_KEY,
+    }
+    if DB_CONFIG_FILE.exists():
         try:
-            data = json.loads(NEON_CONFIG_FILE.read_text(encoding="utf-8"))
-            if data.get("databaseUrl"):
-                NEON_DATABASE_URL = str(data["databaseUrl"]).strip()
+            saved = json.loads(DB_CONFIG_FILE.read_text(encoding="utf-8"))
+            if saved.get("databaseUrl"):
+                cfg["databaseUrl"] = str(saved["databaseUrl"]).strip()
+            if saved.get("supabaseUrl"):
+                cfg["supabaseUrl"] = str(saved["supabaseUrl"]).strip()
+            if saved.get("supabaseKey"):
+                cfg["supabaseKey"] = str(saved["supabaseKey"]).strip()
         except Exception:
             pass
-    return NEON_DATABASE_URL
+    elif NEON_CONFIG_FILE.exists():
+        try:
+            saved = json.loads(NEON_CONFIG_FILE.read_text(encoding="utf-8"))
+            if saved.get("databaseUrl"):
+                cfg["databaseUrl"] = str(saved["databaseUrl"]).strip()
+        except Exception:
+            pass
+    DATABASE_URL = cfg["databaseUrl"]
+    SUPABASE_URL = cfg["supabaseUrl"]
+    SUPABASE_KEY = cfg["supabaseKey"]
+    return cfg
 
 
-def save_neon_url(url: str) -> None:
-    global NEON_DATABASE_URL
-    NEON_DATABASE_URL = url.strip()
+def save_db_config(database_url: str = None, supabase_url: str = None, supabase_key: str = None) -> None:
+    global DATABASE_URL, SUPABASE_URL, SUPABASE_KEY
+    if database_url is not None:
+        DATABASE_URL = database_url.strip()
+    if supabase_url is not None:
+        SUPABASE_URL = supabase_url.strip()
+    if supabase_key is not None:
+        SUPABASE_KEY = supabase_key.strip()
     try:
         DATA_DIR.mkdir(parents=True, exist_ok=True)
-        NEON_CONFIG_FILE.write_text(json.dumps({"databaseUrl": NEON_DATABASE_URL}, indent=2), encoding="utf-8")
+        payload = {"databaseUrl": DATABASE_URL, "supabaseUrl": SUPABASE_URL, "supabaseKey": SUPABASE_KEY}
+        DB_CONFIG_FILE.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        NEON_CONFIG_FILE.write_text(json.dumps({"databaseUrl": DATABASE_URL}, indent=2), encoding="utf-8")
     except Exception:
         pass
 
 
+def load_neon_url() -> str:
+    cfg = load_db_config()
+    return cfg.get("databaseUrl", "")
+
+
+def save_neon_url(url: str) -> None:
+    save_db_config(database_url=url)
+
+
+def get_db_provider_name() -> str:
+    cfg = load_db_config()
+    url = cfg.get("databaseUrl", "").lower()
+    if url and HAVE_PSYCOPG2:
+        if "supabase" in url:
+            return "Supabase PostgreSQL"
+        elif "neon" in url:
+            return "Neon PostgreSQL"
+        return "PostgreSQL (Cloud)"
+    elif cfg.get("supabaseUrl"):
+        return "Supabase GoTrue & REST"
+    return "Local Database (SQLite)"
+
+
 def get_db():
-    url = load_neon_url()
+    cfg = load_db_config()
+    url = cfg.get("databaseUrl", "")
     if url and HAVE_PSYCOPG2:
         try:
             conn = psycopg2.connect(url, sslmode="require", connect_timeout=5)
-            return conn, "neon"
+            provider = "supabase" if "supabase" in url.lower() else "neon" if "neon" in url.lower() else "postgres"
+            return conn, provider
         except Exception:
             pass
     DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -118,7 +172,7 @@ def get_db():
 def db_query(sql: str, params: tuple = (), fetch: str = "all") -> list[dict] | dict | None:
     conn, db_type = get_db()
     try:
-        if db_type == "neon":
+        if db_type in ("neon", "supabase", "postgres"):
             pg_sql = sql.replace("?", "%s")
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(pg_sql, params)
@@ -148,7 +202,7 @@ def db_query(sql: str, params: tuple = (), fetch: str = "all") -> list[dict] | d
 def db_execute(sql: str, params: tuple = ()) -> None:
     conn, db_type = get_db()
     try:
-        if db_type == "neon":
+        if db_type in ("neon", "supabase", "postgres"):
             pg_sql = sql.replace("?", "%s")
             with conn.cursor() as cur:
                 cur.execute(pg_sql, params)
@@ -196,6 +250,57 @@ def init_db() -> None:
     )
     """)
 
+    db_execute("""
+    CREATE TABLE IF NOT EXISTS scheduled_meetings (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        scheduled_at TEXT NOT NULL,
+        duration_minutes INTEGER DEFAULT 45,
+        meet_link TEXT NOT NULL,
+        agenda TEXT,
+        department TEXT DEFAULT 'All Departments',
+        created_by TEXT DEFAULT 'Alex Morgan (Boss)',
+        status TEXT DEFAULT 'scheduled',
+        created_at TEXT NOT NULL
+    )
+    """)
+
+    sample_meet = db_query("SELECT id FROM scheduled_meetings LIMIT 1")
+    if not sample_meet:
+        now_dt = datetime.now(timezone.utc)
+        demo_time_1 = (now_dt + timedelta(days=1)).replace(hour=10, minute=0, second=0, microsecond=0).isoformat()
+        demo_time_2 = (now_dt + timedelta(days=3)).replace(hour=14, minute=30, second=0, microsecond=0).isoformat()
+        db_execute("""
+            INSERT INTO scheduled_meetings (id, title, scheduled_at, duration_minutes, meet_link, agenda, department, created_by, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            "sched_demo_1",
+            "Q4 Strategic Roadmap & Executive All-Hands",
+            demo_time_1,
+            45,
+            "https://meet.google.com/abc-defg-hij",
+            "• Q4 Objectives and customer expansion milestones\n• Product demo of upcoming Meetflow enterprise features\n• Open Q&A session with team leads",
+            "All Departments",
+            "Alex Morgan (Boss)",
+            "scheduled",
+            now()
+        ))
+        db_execute("""
+            INSERT INTO scheduled_meetings (id, title, scheduled_at, duration_minutes, meet_link, agenda, department, created_by, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            "sched_demo_2",
+            "Engineering Architecture & Infrastructure Sync",
+            demo_time_2,
+            60,
+            "https://meet.google.com/xyz-uvwx-rst",
+            "• Database migration review (Supabase & Neon PostgreSQL)\n• Real-time WebSocket streaming performance\n• CI/CD and deployment pipeline checklist",
+            "Engineering & Security",
+            "Alex Morgan (Boss)",
+            "scheduled",
+            now()
+        ))
+
     demo_id = "emp_alex"
     alex = db_query("SELECT id FROM employees WHERE id = ?", (demo_id,), fetch="one")
     if not alex:
@@ -203,8 +308,10 @@ def init_db() -> None:
         pwd_hash = hashlib.pbkdf2_hmac("sha256", "meetflow123".encode(), salt.encode(), 100000).hex()
         db_execute(
             "INSERT INTO employees (id, name, email, password_hash, salt, role, department, avatar_color, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (demo_id, "Alex Morgan", "alex@meetflow.ai", pwd_hash, salt, "Product Marketing Lead", "Product Marketing", "#2e644b", now())
+            (demo_id, "Alex Morgan", "alex@meetflow.ai", pwd_hash, salt, "Executive Lead (Boss)", "Product & Strategy", "#2e644b", now())
         )
+    else:
+        db_execute("UPDATE employees SET role = 'Executive Lead (Boss)' WHERE id = 'emp_alex' AND role != 'Executive Lead (Boss)'")
 
     team = [
         ("emp_sydney", "Sydney Chen", "sydney@meetflow.ai", "Security Architect", "Security", "#448c73"),
@@ -307,6 +414,106 @@ def get_all_employees_with_stats() -> list[dict]:
         emp["meetingsCount"] = cnt
         emp["meetings_attended"] = cnt
     return employees
+
+
+def call_supabase_auth(action: str, payload: dict) -> dict:
+    cfg = load_db_config()
+    sb_url = cfg.get("supabaseUrl", "")
+    sb_key = cfg.get("supabaseKey", "")
+    if not sb_url or not sb_key:
+        raise ValueError("Supabase URL and API Key are not configured.")
+    endpoint = f"{sb_url.rstrip('/')}/auth/v1/signup" if action == "signup" else f"{sb_url.rstrip('/')}/auth/v1/token?grant_type=password"
+    data_bytes = json.dumps(payload).encode("utf-8")
+    req = Request(
+        endpoint,
+        data=data_bytes,
+        headers={
+            "apikey": sb_key,
+            "Authorization": f"Bearer {sb_key}",
+            "Content-Type": "application/json",
+            "User-Agent": USER_AGENT,
+        },
+        method="POST"
+    )
+    try:
+        with urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except HTTPError as e:
+        err_msg = "Supabase Auth request failed."
+        try:
+            err_body = json.loads(e.read().decode("utf-8"))
+            err_msg = err_body.get("msg") or err_body.get("error_description") or err_body.get("message") or err_msg
+        except Exception:
+            pass
+        raise ValueError(err_msg)
+    except URLError as e:
+        raise ValueError(f"Could not reach Supabase: {str(e.reason)}")
+
+
+def format_meet_link(link: str) -> str:
+    cleaned = (link or "").strip()
+    if not cleaned:
+        code = f"{secrets.token_hex(2)}-{secrets.token_hex(2)}-{secrets.token_hex(2)}"
+        return f"https://meet.google.com/{code}"
+    if not cleaned.startswith("http://") and not cleaned.startswith("https://"):
+        if re.match(r"^[a-z]{3}-[a-z]{4}-[a-z]{3}$", cleaned):
+            return f"https://meet.google.com/{cleaned}"
+        return f"https://{cleaned}"
+    return cleaned
+
+
+def get_all_scheduled_meetings() -> list[dict]:
+    meetings = db_query("SELECT id, title, scheduled_at, duration_minutes, meet_link, agenda, department, created_by, status, created_at FROM scheduled_meetings ORDER BY scheduled_at ASC") or []
+    return meetings
+
+
+def get_next_upcoming_meeting() -> dict | None:
+    now_iso = now()
+    meet = db_query("SELECT id, title, scheduled_at, duration_minutes, meet_link, agenda, department, created_by, status, created_at FROM scheduled_meetings WHERE status = 'scheduled' AND scheduled_at >= ? ORDER BY scheduled_at ASC LIMIT 1", (now_iso,), fetch="one")
+    if not meet:
+        meet = db_query("SELECT id, title, scheduled_at, duration_minutes, meet_link, agenda, department, created_by, status, created_at FROM scheduled_meetings WHERE status = 'scheduled' ORDER BY scheduled_at ASC LIMIT 1", fetch="one")
+    return meet
+
+
+def create_scheduled_meeting(title: str, scheduled_at: str, duration_minutes: int = 45, meet_link: str = "", agenda: str = "", department: str = "All Departments", created_by: str = "Boss / Executive") -> dict:
+    mid = f"sched_{uuid.uuid4().hex[:10]}"
+    formatted_link = format_meet_link(meet_link)
+    created = now()
+    db_execute("""
+        INSERT INTO scheduled_meetings (id, title, scheduled_at, duration_minutes, meet_link, agenda, department, created_by, status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (mid, title.strip(), scheduled_at.strip(), duration_minutes, formatted_link, agenda.strip(), department.strip(), created_by.strip(), "scheduled", created))
+    return {
+        "id": mid,
+        "title": title.strip(),
+        "scheduled_at": scheduled_at.strip(),
+        "duration_minutes": duration_minutes,
+        "meet_link": formatted_link,
+        "agenda": agenda.strip(),
+        "department": department.strip(),
+        "created_by": created_by.strip(),
+        "status": "scheduled",
+        "created_at": created
+    }
+
+
+def update_scheduled_meeting(meeting_id: str, updates: dict) -> dict | None:
+    meet = db_query("SELECT * FROM scheduled_meetings WHERE id = ?", (meeting_id,), fetch="one")
+    if not meet:
+        return None
+    allowed = ["title", "scheduled_at", "duration_minutes", "meet_link", "agenda", "department", "status"]
+    for k in allowed:
+        if k in updates:
+            val = updates[k]
+            if k == "meet_link":
+                val = format_meet_link(str(val))
+            db_execute(f"UPDATE scheduled_meetings SET {k} = ? WHERE id = ?", (val, meeting_id))
+    return db_query("SELECT * FROM scheduled_meetings WHERE id = ?", (meeting_id,), fetch="one")
+
+
+def delete_scheduled_meeting(meeting_id: str) -> bool:
+    db_execute("DELETE FROM scheduled_meetings WHERE id = ?", (meeting_id,))
+    return True
 
 
 def get_monthly_attendance_graph(employee_id: str, range_months: int = 12) -> dict:
@@ -1477,32 +1684,45 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         path = unquote(urlparse(self.path).path)
         if path == "/api/status":
-            neon_url = load_neon_url()
+            cfg = load_db_config()
+            db_provider = get_db_provider_name()
+            url = cfg.get("databaseUrl", "").lower()
             return self.send_json({
                 "provider": "AssemblyAI",
                 "configured": bool(ASSEMBLYAI_API_KEY),
                 "assistantConfigured": True,
                 "groqConfigured": bool(GROQ_API_KEY),
-                "neonConfigured": bool(neon_url),
-                "dbProvider": "Neon PostgreSQL" if (neon_url and HAVE_PSYCOPG2) else "Local Database",
+                "neonConfigured": bool("neon" in url),
+                "supabaseConfigured": bool("supabase" in url or cfg.get("supabaseUrl")),
+                "dbProvider": db_provider,
             })
         if path == "/api/auth/me":
             user = get_current_user_from_headers(self.headers)
-            return self.send_json({"user": user})
+            return self.send_json({"user": user, "employee": user})
         if path == "/api/employees":
             return self.send_json(get_all_employees_with_stats())
+        if path == "/api/boss/meetings":
+            return self.send_json(get_all_scheduled_meetings())
+        if path == "/api/boss/upcoming":
+            upcoming = get_next_upcoming_meeting()
+            return self.send_json({"upcoming": upcoming})
         if path == "/api/analytics/monthly":
             query = parse_qs(urlparse(self.path).query)
             user = get_current_user_from_headers(self.headers)
             emp_id = query.get("employeeId", [user["id"] if user else "emp_alex"])[0]
             range_val = int(query.get("range", ["12"])[0])
             return self.send_json(get_monthly_attendance_graph(emp_id, range_val))
-        if path == "/api/settings/neon":
-            url = load_neon_url()
+        if path in ("/api/settings/neon", "/api/settings/supabase", "/api/settings/database"):
+            cfg = load_db_config()
+            url = cfg.get("databaseUrl", "")
+            sb_url = cfg.get("supabaseUrl", "")
             masked = (url[:18] + "..." + url[-10:]) if len(url) > 28 else (url or "")
             return self.send_json({
-                "configured": bool(url),
-                "provider": "Neon PostgreSQL" if (url and HAVE_PSYCOPG2) else "Local Database",
+                "configured": bool(url or sb_url),
+                "provider": get_db_provider_name(),
+                "databaseUrl": url,
+                "supabaseUrl": sb_url,
+                "hasSupabaseKey": bool(cfg.get("supabaseKey")),
                 "maskedUrl": masked,
                 "hasPsycopg2": HAVE_PSYCOPG2,
             })
@@ -1601,6 +1821,56 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_json({"configured": True, "provider": "Neon PostgreSQL", "message": "Successfully connected to Neon PostgreSQL and initialized tables!"})
                 except Exception as err:
                     return self.send_json({"error": f"Failed to connect to Neon DB: {str(err)}"}, 400)
+            if path in ("/api/settings/supabase", "/api/settings/database"):
+                payload = self.read_json()
+                db_url = str(payload.get("databaseUrl", "")).strip()
+                sb_url = str(payload.get("supabaseUrl", "")).strip()
+                sb_key = str(payload.get("supabaseKey", "")).strip()
+                if db_url:
+                    if not db_url.startswith("postgres://") and not db_url.startswith("postgresql://"):
+                        return self.send_json({"error": "Database URL must start with postgresql:// or postgres://"}, 400)
+                    if not HAVE_PSYCOPG2:
+                        return self.send_json({"error": "psycopg2 is not installed on this server to connect to PostgreSQL."}, 500)
+                    try:
+                        test_conn = psycopg2.connect(db_url, sslmode="require", connect_timeout=10)
+                        with test_conn.cursor() as cur:
+                            cur.execute("SELECT 1;")
+                        test_conn.close()
+                    except Exception as err:
+                        return self.send_json({"error": f"Failed to connect to database: {str(err)}"}, 400)
+                save_db_config(database_url=db_url, supabase_url=sb_url, supabase_key=sb_key)
+                init_db()
+                return self.send_json({
+                    "configured": bool(db_url or sb_url),
+                    "provider": get_db_provider_name(),
+                    "message": "Supabase / Database configuration saved successfully!"
+                })
+            if path == "/api/boss/meetings":
+                payload = self.read_json()
+                title = str(payload.get("title", "")).strip()
+                scheduled_at = str(payload.get("scheduled_at", "")).strip()
+                meet_link = str(payload.get("meet_link", "")).strip()
+                agenda = str(payload.get("agenda", "")).strip()
+                department = str(payload.get("department", "All Departments")).strip() or "All Departments"
+                duration = int(payload.get("duration_minutes", 45))
+                if not title:
+                    return self.send_json({"error": "Please provide a meeting title."}, 400)
+                if not scheduled_at:
+                    return self.send_json({"error": "Please provide a scheduled date and time."}, 400)
+                if not meet_link:
+                    return self.send_json({"error": "Please provide or generate a Google Meet link."}, 400)
+                user = get_current_user_from_headers(self.headers)
+                creator = user["name"] if user else "Alex Morgan (Boss)"
+                meeting = create_scheduled_meeting(
+                    title=title,
+                    scheduled_at=scheduled_at,
+                    duration_minutes=duration,
+                    meet_link=meet_link,
+                    agenda=agenda,
+                    department=department,
+                    created_by=creator
+                )
+                return self.send_json(meeting, 201)
             if path == "/api/config":
                 return self.send_json({"error": "AssemblyAI transcription is configured on the server with the ASSEMBLYAI_API_KEY environment variable. No browser API key prompt is used."}, 410)
             if path == "/api/assistant/config":
@@ -1697,6 +1967,16 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_PATCH(self) -> None:
         path = urlparse(self.path).path
+        if path.startswith("/api/boss/meetings/"):
+            meeting_id = path.removeprefix("/api/boss/meetings/")
+            try:
+                payload = self.read_json()
+            except (ValueError, json.JSONDecodeError) as error:
+                return self.send_json({"error": str(error)}, 400)
+            meeting = update_scheduled_meeting(meeting_id, payload)
+            if not meeting:
+                return self.send_json({"error": "Scheduled meeting not found."}, 404)
+            return self.send_json(meeting)
         if not path.startswith("/api/meetings/"):
             return self.send_error(404)
         meeting_id = path.removeprefix("/api/meetings/")
@@ -1733,6 +2013,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_DELETE(self) -> None:
         path = unquote(urlparse(self.path).path)
+        if path.startswith("/api/boss/meetings/"):
+            meeting_id = path.removeprefix("/api/boss/meetings/")
+            delete_scheduled_meeting(meeting_id)
+            return self.send_json({"deleted": True, "id": meeting_id})
         if path == "/api/meetings":
             return self.send_json({"cleared": clear_saved_meetings()})
         parts = path.strip("/").split("/")

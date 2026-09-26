@@ -1690,4 +1690,317 @@ body {
 .auth-feedback {
   font-size: 11px;
   color: #a12b2b;
+}
+
+/* =========================================================
+   Executive Announcement Live Banner
+   ========================================================= */
+.boss-live-banner {
+  background: linear-gradient(135deg, #1b3d2c 0%, #245e43 100%);
+  color: #ffffff;
+  border-radius: 12px;
+  padding: 16px 20px;
+  margin-bottom: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  box-shadow: 0 4px 16px rgba(27, 61, 44, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  position: relative;
+  overflow: hidden;
+}
+
+.boss-live-banner::after {
+  content: "";
+  position: absolute;
+  top: -20px;
+  right: -20px;
+  width: 100px;
+  height: 100px;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.12) 0%, transparent 70%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.banner-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  background: rgba(255, 255, 255, 0.16);
+  color: #8ceabb;
+  padding: 4px 8px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 4px;
+}
+
+.banner-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.banner-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #ffffff;
+  margin-bottom: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.banner-meta {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.banner-actions {
+  flex: none;
+}
+
+.button-meet {
+  background: #1a73e8;
+  color: #ffffff;
+  border: none;
+  font-weight: 600;
+  font-size: 13px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
+  transition: all 0.18s ease;
+  box-shadow: 0 2px 6px rgba(26, 115, 232, 0.35);
+}
+
+.button-meet:hover {
+  background: #1557b0;
+  box-shadow: 0 4px 10px rgba(26, 115, 232, 0.45);
+  transform: translateY(-1px);
+  color: #ffffff;
+}
+
+.meet-icon-dot {
+  width: 8px;
+  height: 8px;
+  background: #34a853;
+  border-radius: 50%;
+  display: inline-block;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.3);
+}
+
+/* =========================================================
+   Boss / Executive Portal Page
+   ========================================================= */
+.boss-page {
+  display: block;
+}
+
+.boss-grid {
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+  gap: 24px;
+  align-items: start;
+}
+
+@media (max-width: 1020px) {
+  .boss-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.boss-card {
+  background: #ffffff;
+  border: 1px solid #dce4de;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 2px 8px rgba(20, 36, 27, 0.04);
+}
+
+.boss-card-head {
+  margin-bottom: 20px;
+}
+
+.boss-card-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #245e43;
+  background: #eef6f1;
+  padding: 3px 8px;
+  border-radius: 4px;
+  display: inline-block;
+  margin-bottom: 6px;
+}
+
+.boss-card h3 {
+  font-size: 17px;
+  font-weight: 700;
+  color: #1a2c22;
+  margin: 0;
+}
+
+.boss-form {
+  display: grid;
+  gap: 16px;
+}
+
+.form-row-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+@media (max-width: 600px) {
+  .form-row-2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+.meet-input-wrap {
+  display: flex;
+  gap: 8px;
+}
+
+.meet-input-wrap input {
+  flex: 1;
+}
+
+.boss-textarea {
+  min-height: 85px;
+  resize: vertical;
+  line-height: 1.5;
+  font-family: inherit;
+}
+
+.boss-form-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 6px;
+}
+
+/* Scheduled Meetings List */
+.scheduled-meetings-list {
+  display: grid;
+  gap: 14px;
+}
+
+.scheduled-meet-item {
+  background: #fdfefe;
+  border: 1px solid #dce4de;
+  border-radius: 10px;
+  padding: 16px;
+  display: grid;
+  gap: 10px;
+  transition: all 0.15s ease;
+}
+
+.scheduled-meet-item:hover {
+  border-color: #245e43;
+  box-shadow: 0 3px 10px rgba(36, 94, 67, 0.06);
+}
+
+.scheduled-meet-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.scheduled-meet-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1a2c22;
+  margin-bottom: 3px;
+}
+
+.scheduled-meet-time {
+  font-size: 12px;
+  font-weight: 600;
+  color: #245e43;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.scheduled-meet-badges {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.dept-badge {
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: #f0f4f1;
+  color: #55675c;
+  font-weight: 600;
+}
+
+.status-badge-scheduled {
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: #e8f5e9;
+  color: #2e7d32;
+  font-weight: 600;
+}
+
+.status-badge-completed {
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: #eceff1;
+  color: #607d8b;
+  font-weight: 600;
+}
+
+.scheduled-meet-agenda {
+  font-size: 12px;
+  color: #55675c;
+  background: #f7f9f7;
+  padding: 10px 12px;
+  border-radius: 6px;
+  white-space: pre-line;
+  line-height: 1.45;
+}
+
+.scheduled-meet-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-top: 6px;
+  border-top: 1px solid #f0f4f1;
+}
+
+.meet-link-btn {
+  background: #1a73e8;
+  color: #ffffff;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 0.15s ease;
+}
+
+.meet-link-btn:hover {
+  background: #1557b0;
+  color: #ffffff;
+}
+
+.meet-item-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
