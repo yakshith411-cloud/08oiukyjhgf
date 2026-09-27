@@ -347,6 +347,46 @@ def call_supabase_auth(action: str, payload: dict) -> dict:
         raise ValueError(f"Could not reach Supabase: {str(e.reason)}")
 
 
+def mirror_employee_to_supabase(user: dict) -> None:
+    """Best-effort mirror of an employee record into the Supabase `employees` table.
+
+    Uses the anon key over Supabase REST so every Google/email signup also lands
+    in Supabase (see supabase_schema.sql). Never raises — local DB is the source
+    of truth and RLS may block anonymous writes until the schema policies below
+    are applied in the Supabase dashboard.
+    """
+    try:
+        cfg = load_db_config()
+        sb_url = (cfg.get("supabaseUrl", "") or "").rstrip("/")
+        sb_key = cfg.get("supabaseKey", "")
+        if not sb_url or not sb_key or not user or not user.get("email"):
+            return
+        payload = json.dumps({
+            "id": user.get("id"),
+            "name": user.get("name"),
+            "email": user.get("email"),
+            "role": user.get("role") or "Employee",
+            "department": user.get("department") or "General",
+            "avatar_color": user.get("avatar_color") or "#2e644b",
+        }).encode("utf-8")
+        req = Request(
+            f"{sb_url}/rest/v1/employees?on_conflict=email",
+            data=payload,
+            headers={
+                "apikey": sb_key,
+                "Authorization": f"Bearer {sb_key}",
+                "Content-Type": "application/json",
+                "Prefer": "resolution=merge-duplicates",
+                "User-Agent": USER_AGENT,
+            },
+            method="POST",
+        )
+        with urlopen(req, timeout=8) as resp:
+            resp.read()
+    except Exception:
+        pass
+
+
 def format_meet_link(link: str) -> str:
     cleaned = (link or "").strip()
     if not cleaned:
@@ -1539,7 +1579,7 @@ def answer_meeting_question(question: str, target: list[dict] | dict) -> str:
     return f"I searched the meeting records for **'{q}'**, but didn't find a direct discussion in this meeting.\n\nTry asking about:\n• Vulnerability management or security\n• GitLab 14.0 or Commit keynote\n• Messaging framework ('more speed, less risk')\n• Competitors (GitHub, Atlassian, Jenkins)\n• Corporate events or action items"
 
 
-def transcribe_job(job_id: str, filename: str, audio: bytes, title: str, api_key: str, workspace_epoch: int) -> None:
+def transcribe_job(job_id: str, filename: str, audio: bytes, title: str, api_key: str, workspace_epoch: int, employee_id: str | None = None) -> None:
     JOBS[job_id].update(status="processing", message="Sending audio securely to AssemblyAI…")
     try:
         transcript, language, ai_summary = transcribe_with_assemblyai(filename, audio, api_key)
@@ -1554,7 +1594,7 @@ def transcribe_job(job_id: str, filename: str, audio: bytes, title: str, api_key
             meetings = read_meetings()
             meetings.insert(0, meeting)
             write_meetings(meetings)
-        record_meeting_attendance(meeting["id"], meeting["title"], len(meeting.get("tasks", [])))
+        record_meeting_attendance(meeting["id"], meeting["title"], len(meeting.get("tasks", [])), employee_id=employee_id)
         JOBS[job_id].update(status="complete", meetingId=meeting["id"], message="Transcript and project brief are ready.")
     except Exception as error:
         JOBS[job_id].update(status="error", message=f"Transcription could not finish: {error}")
@@ -1698,6 +1738,7 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 token = create_session(emp_id)
                 user = db_query("SELECT id, name, email, role, department, avatar_color, created_at FROM employees WHERE id = ?", (emp_id,), fetch="one")
+                mirror_employee_to_supabase(user)
                 return self.send_json({"token": token, "user": user, "employee": user}, 201)
             if path == "/api/auth/login":
                 payload = self.read_json()
@@ -1730,7 +1771,19 @@ class Handler(BaseHTTPRequestHandler):
                     )
                     user = db_query("SELECT id, name, email, role, department, avatar_color, created_at FROM employees WHERE id = ?", (emp_id,), fetch="one")
                 token = create_session(emp_id)
+                mirror_employee_to_supabase(user)
                 return self.send_json({"token": token, "user": user, "employee": user})
+            if path == "/api/attendance/record":
+                user = get_current_user_from_headers(self.headers)
+                if not user:
+                    return self.send_json({"error": "Sign in to record attendance."}, 401)
+                payload = self.read_json()
+                meeting_id = str(payload.get("meetingId", "")).strip()
+                title = str(payload.get("title", "")).strip() or "Scheduled meeting"
+                if not meeting_id:
+                    return self.send_json({"error": "Missing meeting id."}, 400)
+                record_meeting_attendance(meeting_id, title, tasks_count=0, employee_id=user["id"])
+                return self.send_json({"recorded": True, "employeeId": user["id"]})
             if path == "/api/auth/logout":
                 token = self.headers.get("Authorization", "").removeprefix("Bearer ").strip()
                 if token:
@@ -1869,7 +1922,8 @@ class Handler(BaseHTTPRequestHandler):
                     meetings = read_meetings()
                     meetings.insert(0, meeting)
                     write_meetings(meetings)
-                record_meeting_attendance(meeting["id"], meeting["title"], len(meeting.get("tasks", [])))
+                creator = get_current_user_from_headers(self.headers)
+                record_meeting_attendance(meeting["id"], meeting["title"], len(meeting.get("tasks", [])), employee_id=creator["id"] if creator else None)
                 return self.send_json(meeting, 201)
             if path == "/api/transcribe":
                 with LOCK:
@@ -1888,7 +1942,9 @@ class Handler(BaseHTTPRequestHandler):
                         return self.send_json({"error": "The workspace was cleared while this upload was being received. Please upload it again if you still want to keep it."}, 409)
                 job_id = uuid.uuid4().hex[:12]
                 JOBS[job_id] = {"status": "queued", "message": "Audio received. Starting cloud transcription."}
-                thread = threading.Thread(target=transcribe_job, args=(job_id, filename, audio, self.headers.get("X-Meeting-Title", ""), api_key, workspace_epoch), daemon=True)
+                uploader = get_current_user_from_headers(self.headers)
+                uploader_id = uploader["id"] if uploader else None
+                thread = threading.Thread(target=transcribe_job, args=(job_id, filename, audio, self.headers.get("X-Meeting-Title", ""), api_key, workspace_epoch, uploader_id), daemon=True)
                 thread.start()
                 return self.send_json({"jobId": job_id}, 202)
             if path.startswith("/api/meetings/") and path.endswith("/analyze"):

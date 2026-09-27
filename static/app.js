@@ -2,31 +2,72 @@ const SAMPLE_TITLE = "Product launch · weekly sync";
 const SAMPLE_TRANSCRIPT = `Maya: We have three weeks until launch, and the onboarding flow is the biggest risk.\nJordan: I will share the revised onboarding screens with the team by Friday.\nMaya: Great. We agreed to keep the first release focused on account setup and the welcome checklist.\nLeo: I can review the event tracking plan and send any gaps to Maya by next Tuesday.\nMaya: Let's also confirm the launch email with the support team before we lock the date.\nJordan: I will draft the launch email and share it with support on Thursday.\nMaya: Decision: we will move the launch readiness review to the 18th so support has time to prepare.\nLeo: I will schedule a thirty-minute readiness review with support and engineering by Monday.\nMaya: Sounds good. We need one final pass on mobile before the review.`;
 
 // Multi-Account Slot Support (e.g. ?u=1, ?u=2)
-const urlParams = new URLSearchParams(window.location.search);
-const userSlot = urlParams.get("u") || sessionStorage.getItem("meetflow_active_u") || "0";
-if (urlParams.get("u")) {
-  sessionStorage.setItem("meetflow_active_u", urlParams.get("u"));
+// Each tab keeps its own login: open /meetings?u=1 in a new tab to sign in as
+// a second account on the same port. Refreshing a tab never switches it to
+// another account because the slot is pinned per-tab in sessionStorage.
+function currentSlotFromUrl() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const u = params.get("u");
+    if (u !== null && u !== "") {
+      try { sessionStorage.setItem("meetflow_active_u", u); } catch (_) {}
+      return u;
+    }
+  } catch (_) {}
+  try {
+    return sessionStorage.getItem("meetflow_active_u") || "0";
+  } catch (_) {
+    return "0";
+  }
 }
-const tokenStorageKey = `meetflow_auth_token_u${userSlot}`;
+let userSlot = currentSlotFromUrl();
+function tokenKeyFor(slot) {
+  return `meetflow_auth_token_u${slot}`;
+}
+function resyncSlot() {
+  const slot = currentSlotFromUrl();
+  if (slot !== userSlot) {
+    userSlot = slot;
+    try {
+      state.token = getStoredToken();
+    } catch (_) {}
+  }
+  return userSlot;
+}
+window.addEventListener("popstate", resyncSlot);
+window.addEventListener("hashchange", resyncSlot);
 
 function getStoredToken() {
-  return localStorage.getItem(tokenStorageKey) || (userSlot === "0" ? localStorage.getItem("meetflow_auth_token") : "") || "";
+  try {
+    return localStorage.getItem(tokenKeyFor(userSlot)) || (userSlot === "0" ? localStorage.getItem("meetflow_auth_token") : "") || "";
+  } catch (_) {
+    return "";
+  }
 }
 
 function saveStoredToken(tok) {
   state.token = tok;
-  localStorage.setItem(tokenStorageKey, tok);
-  if (userSlot === "0") {
-    localStorage.setItem("meetflow_auth_token", tok);
-  }
+  try {
+    localStorage.setItem(tokenKeyFor(userSlot), tok);
+    if (userSlot === "0") {
+      localStorage.setItem("meetflow_auth_token", tok);
+    }
+  } catch (_) {}
 }
 
 function clearStoredToken() {
   state.token = "";
-  localStorage.removeItem(tokenStorageKey);
-  if (userSlot === "0") {
-    localStorage.removeItem("meetflow_auth_token");
-  }
+  try {
+    localStorage.removeItem(tokenKeyFor(userSlot));
+    if (userSlot === "0") {
+      localStorage.removeItem("meetflow_auth_token");
+    }
+  } catch (_) {}
+}
+
+function dismissedKey(meetingId) {
+  const who = (state && state.currentUser && (state.currentUser.id || state.currentUser.email)) || `u${userSlot}`;
+  return `meetflow_dismissed_meet_${who}_${meetingId}`;
 }
 
 const DEFAULT_SB_URL = "https://fqizwbfhlcfqofvcovmv.supabase.co";
@@ -61,6 +102,7 @@ const $$ = (selector) => [...document.querySelectorAll(selector)];
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
 
 async function api(path, options = {}) {
+  resyncSlot();
   const headers = { ...(options.headers || {}) };
   if (state.token) {
     headers["Authorization"] = `Bearer ${state.token}`;
@@ -806,7 +848,7 @@ async function loadEmployeeMeetings() {
     const meetings = Array.isArray(res) ? res : [];
 
     const activeMeetings = meetings.filter((m) => {
-      const isDismissed = localStorage.getItem(`meetflow_dismissed_meet_u${userSlot}_${m.id}`) === "true";
+      const isDismissed = localStorage.getItem(dismissedKey(m.id)) === "true";
       const isCompleted = m.status === "completed";
       return !isDismissed && !isCompleted;
     });
@@ -849,8 +891,9 @@ async function loadEmployeeMeetings() {
         const mid = btn.dataset.id;
         const mtitle = btn.dataset.title;
 
-        // Mark permanently dismissed for this employee
-        localStorage.setItem(`meetflow_dismissed_meet_u${userSlot}_${mid}`, "true");
+        // Mark permanently dismissed for this employee (per-user key, so one
+        // employee joining never hides the meeting for another account)
+        try { localStorage.setItem(dismissedKey(mid), "true"); } catch (_) {}
 
         try {
           await api("/api/attendance/record", {
@@ -1132,6 +1175,18 @@ function renderTeamGrid() {
   const countEl = $("#team-count");
   if (countEl) countEl.textContent = members.length;
 
+  const deptsEl = $("#team-depts-count");
+  if (deptsEl) {
+    const depts = new Set((state.teamMembers || []).map((m) => (m.department || "").trim()).filter(Boolean));
+    deptsEl.textContent = depts.size;
+  }
+  const alignEl = $("#team-alignment");
+  if (alignEl) {
+    const allTasks = state.meetings.flatMap((m) => m.tasks || []);
+    const done = allTasks.filter((t) => t.completed).length;
+    alignEl.textContent = allTasks.length ? `${Math.round((done / allTasks.length) * 100)}%` : "—";
+  }
+
   const leadEl = $("#team-lead-attendee");
   const leadFoot = $("#team-lead-attendee-foot");
   if (leadEl) {
@@ -1233,10 +1288,6 @@ function renderCalendar() {
     dayTasks.forEach((t) => {
       pillsHtml += `<div class="calendar-event-pill sample-event" data-meeting-id="${escapeHtml(t.meetingId)}" title="Due: ${escapeHtml(t.title)}">✓ ${escapeHtml(t.title)}</div>`;
     });
-
-    if (!dayMeetings.length && !dayBossMeetings.length && !dayTasks.length && (d === 8 || d === 15 || d === 22)) {
-      pillsHtml += `<div class="calendar-event-pill sample-event">Team Sync (10:00 AM)</div>`;
-    }
 
     cellsHtml += `
       <div class="calendar-day-cell ${isToday ? "cell-today" : ""}" data-date="${dateStr}">
@@ -1666,7 +1717,13 @@ function getSupabaseClient() {
     return null;
   }
   try {
-    return window.supabase.createClient(sbUrl, sbKey);
+    // Scope Supabase's internal auth storage per user slot so each
+    // tab (?u=1, ?u=2) keeps its own Google OAuth session in localStorage
+    // and refreshing one tab never overwrites the other.
+    const storageKey = `sb-auth-token-u${userSlot}`;
+    return window.supabase.createClient(sbUrl, sbKey, {
+      auth: { storageKey }
+    });
   } catch (err) {
     console.warn("Could not create Supabase client:", err);
     return null;
@@ -1686,64 +1743,71 @@ async function initAuth() {
     }
   } catch (e) {}
 
-  // Check if returning from Supabase Google OAuth redirect
-  const sbClient = getSupabaseClient();
-  if (sbClient) {
-    try {
-      const { data: { session } } = await sbClient.auth.getSession();
-      if (session && session.user && session.user.email) {
-        const gUser = session.user;
-        const res = await api("/api/auth/google-sync", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            email: gUser.email,
-            name: gUser.user_metadata?.full_name || gUser.user_metadata?.name || gUser.email.split("@")[0],
-            avatar_url: gUser.user_metadata?.avatar_url || "",
-          }),
-        });
-        saveStoredToken(res.token);
-        state.currentUser = res.employee || res.user;
-
-        // Ensure user is stored in Supabase employees table
-        try {
-          await sbClient.from("employees").upsert({
-            id: state.currentUser.id,
-            name: state.currentUser.name,
-            email: state.currentUser.email,
-            role: state.currentUser.role || "Employee",
-            department: state.currentUser.department || "General",
-            avatar_color: state.currentUser.avatar_color || "#2e644b",
-          }, { onConflict: "email" });
-        } catch (_) {}
-
-        if (window.location.hash && window.location.hash.includes("access_token")) {
-          const cleanUrl = window.location.pathname + (userSlot !== "0" ? `?u=${userSlot}` : "");
-          window.history.replaceState(null, "", cleanUrl);
-        }
-        updateUserUI();
-        showToast(`Signed in with Google as ${state.currentUser.name}`);
-        return;
-      }
-    } catch (sbErr) {
-      console.warn("Supabase session check error:", sbErr);
-    }
-  }
-
+  // 1. If we already have an app token for this slot, validate it first.
+  //    This prevents a Supabase session from a different slot overwriting us.
   if (state.token) {
     try {
       const res = await api("/api/auth/me");
       state.currentUser = res.user || res.employee || res;
       updateUserUI();
-      return;
+      return; // token is valid — done
     } catch (err) {
       console.warn("Auth check:", err);
       clearStoredToken();
       state.currentUser = null;
     }
-  } else {
-    state.currentUser = null;
   }
+
+  // 2. Only check Supabase session if we are returning from a Google OAuth
+  //    redirect (URL hash contains access_token) — not on every page load.
+  const isOAuthRedirect = window.location.hash && window.location.hash.includes("access_token");
+  if (isOAuthRedirect) {
+    const sbClient = getSupabaseClient();
+    if (sbClient) {
+      try {
+        const { data: { session } } = await sbClient.auth.getSession();
+        if (session && session.user && session.user.email) {
+          const gUser = session.user;
+          const res = await api("/api/auth/google-sync", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              email: gUser.email,
+              name: gUser.user_metadata?.full_name || gUser.user_metadata?.name || gUser.email.split("@")[0],
+              avatar_url: gUser.user_metadata?.avatar_url || "",
+            }),
+          });
+          saveStoredToken(res.token);
+          state.currentUser = res.employee || res.user;
+
+          // Ensure user is stored in Supabase employees table
+          try {
+            await sbClient.from("employees").upsert({
+              id: state.currentUser.id,
+              name: state.currentUser.name,
+              email: state.currentUser.email,
+              role: state.currentUser.role || "Employee",
+              department: state.currentUser.department || "General",
+              avatar_color: state.currentUser.avatar_color || "#2e644b",
+            }, { onConflict: "email" });
+          } catch (_) {}
+
+          // Clean up the hash from the URL
+          const cleanUrl = window.location.pathname + (userSlot !== "0" ? `?u=${userSlot}` : "");
+          window.history.replaceState(null, "", cleanUrl);
+
+          updateUserUI();
+          showToast(`Signed in with Google as ${state.currentUser.name}`);
+          return;
+        }
+      } catch (sbErr) {
+        console.warn("Supabase session check error:", sbErr);
+      }
+    }
+  }
+
+  // 3. No valid token and not an OAuth redirect — show guest UI
+  state.currentUser = null;
   updateUserUI();
 }
 
@@ -2231,6 +2295,29 @@ if ("Notification" in window && Notification.permission === "default") {
   }, 1200);
 }
 
+// Keep every data point live: re-fetch the current view's source on an interval
+// (boss broadcasts, employee queue, team directory, monthly analytics, calendar).
+async function refreshLiveData() {
+  resyncSlot();
+  try { await loadBossBanner(); } catch (_) {}
+  try {
+    if (state.view === "meetings") {
+      await loadEmployeeMeetings();
+    } else if (state.view === "boss") {
+      await loadBossMeetings();
+    } else if (state.view === "team") {
+      await loadTeamDirectory();
+    } else if (state.view === "analytics") {
+      await loadMonthlyAnalytics(state.analyticsRange);
+    } else if (state.view === "calendar") {
+      try {
+        state.bossMeetings = await api("/api/boss/meetings");
+      } catch (_) {}
+      renderCalendar();
+    }
+  } catch (_) {}
+}
+
 // App Initialization
 initAuth().catch(console.error);
 loadMeetings().catch((error) => showToast(error.message));
@@ -2240,5 +2327,6 @@ setDefaultMeetingDate();
 checkInitialRoute();
 window.addEventListener("popstate", checkInitialRoute);
 window.addEventListener("hashchange", checkInitialRoute);
-document.addEventListener("visibilitychange", () => { if (!document.hidden) checkDeadlineReminders(); });
+document.addEventListener("visibilitychange", () => { if (!document.hidden) { checkDeadlineReminders(); refreshLiveData(); } });
 setInterval(() => checkDeadlineReminders().catch((error) => showToast(error.message)), 60000);
+setInterval(() => { refreshLiveData(); }, 20000);
