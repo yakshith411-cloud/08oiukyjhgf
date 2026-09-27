@@ -1710,20 +1710,26 @@ const saveNeonSettings = saveSupabaseSettings;
 /* =========================================================
    Authentication & Employee Profile
    ========================================================= */
+let cachedSbClient = null;
+let cachedSbClientKey = "";
 function getSupabaseClient() {
   const sbUrl = state.supabaseUrl || $("#supabase-url-input")?.value?.trim() || localStorage.getItem("meetflow_sb_url") || "";
   const sbKey = state.supabaseKey || $("#supabase-key-input")?.value?.trim() || localStorage.getItem("meetflow_sb_key") || "";
   if (!sbUrl || !sbKey || typeof window.supabase === "undefined") {
     return null;
   }
+  // Reuse one client per (project, slot): each tab (?u=1, ?u=2) keeps its own
+  // Google OAuth session in localStorage and refreshing one tab never
+  // overwrites the other.
+  const cacheKey = `${sbUrl}|u${userSlot}`;
+  if (cachedSbClient && cachedSbClientKey === cacheKey) return cachedSbClient;
   try {
-    // Scope Supabase's internal auth storage per user slot so each
-    // tab (?u=1, ?u=2) keeps its own Google OAuth session in localStorage
-    // and refreshing one tab never overwrites the other.
     const storageKey = `sb-auth-token-u${userSlot}`;
-    return window.supabase.createClient(sbUrl, sbKey, {
+    cachedSbClient = window.supabase.createClient(sbUrl, sbKey, {
       auth: { storageKey }
     });
+    cachedSbClientKey = cacheKey;
+    return cachedSbClient;
   } catch (err) {
     console.warn("Could not create Supabase client:", err);
     return null;
@@ -1759,15 +1765,41 @@ async function initAuth() {
   }
 
   // 2. Only check Supabase session if we are returning from a Google OAuth
-  //    redirect (URL hash contains access_token) — not on every page load.
-  const isOAuthRedirect = window.location.hash && window.location.hash.includes("access_token");
+  //    redirect — Supabase uses either a hash fragment (#access_token=...) or a
+  //    PKCE code (?code=...) depending on project settings. The code exchange
+  //    finishes asynchronously after client creation, so retry briefly.
+  const returnParams = new URLSearchParams(window.location.search);
+  const oauthError = returnParams.get("error");
+  const isOAuthRedirect = Boolean(
+    (window.location.hash && window.location.hash.includes("access_token")) ||
+    returnParams.has("code") ||
+    oauthError
+  );
+  if (oauthError) {
+    const cleanUrl = window.location.pathname + (userSlot !== "0" ? `?u=${userSlot}` : "");
+    window.history.replaceState(null, "", cleanUrl);
+    showToast(`Google sign-in failed: ${returnParams.get("error_description") || oauthError}`);
+    state.currentUser = null;
+    updateUserUI();
+    return;
+  }
   if (isOAuthRedirect) {
     const sbClient = getSupabaseClient();
     if (sbClient) {
       try {
-        const { data: { session } } = await sbClient.auth.getSession();
-        if (session && session.user && session.user.email) {
-          const gUser = session.user;
+        let oauthSession = null;
+        for (let attempt = 0; attempt < 12; attempt++) {
+          try {
+            const { data } = await sbClient.auth.getSession();
+            if (data && data.session && data.session.user && data.session.user.email) {
+              oauthSession = data.session;
+              break;
+            }
+          } catch (_) {}
+          await new Promise((resolve) => setTimeout(resolve, 400));
+        }
+        if (oauthSession) {
+          const gUser = oauthSession.user;
           const res = await api("/api/auth/google-sync", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -1792,7 +1824,7 @@ async function initAuth() {
             }, { onConflict: "email" });
           } catch (_) {}
 
-          // Clean up the hash from the URL
+          // Clean up OAuth params from the URL, keeping this tab's ?u= slot
           const cleanUrl = window.location.pathname + (userSlot !== "0" ? `?u=${userSlot}` : "");
           window.history.replaceState(null, "", cleanUrl);
 
@@ -1800,6 +1832,9 @@ async function initAuth() {
           showToast(`Signed in with Google as ${state.currentUser.name}`);
           return;
         }
+        const cleanUrl = window.location.pathname + (userSlot !== "0" ? `?u=${userSlot}` : "");
+        window.history.replaceState(null, "", cleanUrl);
+        showToast("Google sign-in did not complete. Check that Google is enabled and this address is allowlisted in Supabase Authentication > URL Configuration.");
       } catch (sbErr) {
         console.warn("Supabase session check error:", sbErr);
       }
@@ -1909,7 +1944,10 @@ async function handleGoogleSignIn() {
   }
 
   try {
-    const redirectUrl = window.location.origin + "/meetings" + (userSlot !== "0" ? `?u=${encodeURIComponent(userSlot)}` : "");
+    // Redirect back to the plain meetings URL (no ?u=): exact URLs must be
+    // allowlisted in Supabase Authentication > URL Configuration, and this
+    // tab's account slot is preserved separately in per-tab sessionStorage.
+    const redirectUrl = `${window.location.origin}/meetings`;
     const { error } = await sbClient.auth.signInWithOAuth({
       provider: "google",
       options: {
@@ -1918,11 +1956,16 @@ async function handleGoogleSignIn() {
     });
     if (error) throw error;
   } catch (err) {
+    const msg = err.message || "Failed to start Google sign-in.";
     if (feedback) {
-      feedback.textContent = err.message || "Failed to start Google sign-in.";
+      feedback.textContent = msg;
       feedback.style.color = "#a12b2b";
     }
-    showToast(err.message || "Google sign-in failed.");
+    if (/redirect|allow|whitelist|url/i.test(msg)) {
+      showToast("Allowlist this address in Supabase: Authentication > URL Configuration > Redirect URLs.");
+    } else {
+      showToast(msg);
+    }
   }
 }
 window.handleGoogleSignIn = handleGoogleSignIn;

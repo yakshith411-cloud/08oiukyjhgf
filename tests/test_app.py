@@ -489,6 +489,43 @@ class MeetingAnalysisTests(unittest.TestCase):
             self.assertIn(route, meetflow_app.PAGE_ROUTES)
             self.assertIn(f"{route}/" if not route.endswith("/") else route, meetflow_app.PAGE_ROUTES)
 
+    def test_guest_attendance_never_leaks_across_accounts(self):
+        with TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            with patch("app.DATA_DIR", temp_path):
+                meetflow_app.init_db()
+
+                # No accounts: guest activity records nothing.
+                meetflow_app.record_meeting_attendance("m_ghost", "Ghost Meet", employee_id=None)
+                self.assertEqual(meetflow_app.db_query("SELECT * FROM attendance") or [], [])
+
+                # Single account: guest fallback preserved for solo localhost use.
+                meetflow_app.db_execute(
+                    "INSERT INTO employees (id, name, email, password_hash, salt, role, department, avatar_color, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    ("emp_solo", "Solo User", "solo@meetflow.ai", "h", "s", "Employee", "General", "#2e644b", meetflow_app.now())
+                )
+                meetflow_app.record_meeting_attendance("m_solo", "Solo Sync", employee_id=None)
+                rows = meetflow_app.db_query("SELECT * FROM attendance") or []
+                self.assertEqual(len(rows), 1)
+                self.assertEqual(rows[0]["employee_id"], "emp_solo")
+
+                # Second account appears: guest activity must not pollute anyone.
+                meetflow_app.db_execute(
+                    "INSERT INTO employees (id, name, email, password_hash, salt, role, department, avatar_color, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    ("emp_second", "Second User", "second@meetflow.ai", "h", "s", "Employee", "General", "#2e644b", meetflow_app.now())
+                )
+                meetflow_app.record_meeting_attendance("m_ambiguous", "Ambiguous Upload", employee_id=None)
+                rows = meetflow_app.db_query("SELECT * FROM attendance") or []
+                self.assertEqual(len(rows), 1)
+
+                # Explicit per-user recording still works for each account.
+                meetflow_app.record_meeting_attendance("m_a", "A Meet", employee_id="emp_solo")
+                meetflow_app.record_meeting_attendance("m_b", "B Meet", employee_id="emp_second")
+                graph_a = meetflow_app.get_monthly_attendance_graph("emp_solo", range_months=12)
+                graph_b = meetflow_app.get_monthly_attendance_graph("emp_second", range_months=12)
+                self.assertEqual(graph_a["totalMeetings"], 2)
+                self.assertEqual(graph_b["totalMeetings"], 1)
+
     def test_delete_account_and_attendance_record(self):
         with TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)

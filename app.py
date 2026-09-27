@@ -514,9 +514,13 @@ def get_monthly_attendance_graph(employee_id: str, range_months: int = 12) -> di
 
 def record_meeting_attendance(meeting_id: str, title: str, tasks_count: int = 0, employee_id: str | None = None) -> None:
     if not employee_id:
-        default_user = db_query("SELECT id FROM employees ORDER BY created_at ASC LIMIT 1", fetch="one")
-        if default_user:
-            employee_id = default_user["id"]
+        # Guest (signed-out) activity: only attribute it when there is exactly
+        # one account on this server. With multiple users, attributing guest
+        # uploads to the oldest account would pollute another user's Monthly
+        # Analytics, so skip instead.
+        people = db_query("SELECT id FROM employees ORDER BY created_at ASC") or []
+        if len(people) == 1:
+            employee_id = people[0]["id"]
         else:
             return
     m_now = datetime.now(timezone.utc)
